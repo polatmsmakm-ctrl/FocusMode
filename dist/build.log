@@ -1,0 +1,17 @@
+== HTFix ==
+OK HTFix
+== HTAds ==
+OK HTAds
+== HTDict ==
+OK HTDict
+== FocusMode (all-in-one) ==
+OK FocusMode
+total 2376
+drwxr-xr-x  8 runner  staff     256 Oct 27 12:08 .
+drwxr-xr-x  7 runner  staff     224 Oct 27 12:08 ..
+-rw-r--r--  1 runner  staff     107 Oct 27 12:08 build.log
+-rwxr-xr-x  1 runner  staff  328368 Oct 27 12:08 FocusMode.dylib
+-rwxr-xr-x  1 runner  staff  286496 Oct 27 12:08 HTAds.dylib
+-rwxr-xr-x  1 runner  staff  307312 Oct 27 12:08 HTDict.dylib
+-rwxr-xr-x  1 runner  staff  282608 Oct 27 12:08 HTFix.dylib
+drwxr-xr-x  6 runner  staff     192 Oct 27 12:08 obj
