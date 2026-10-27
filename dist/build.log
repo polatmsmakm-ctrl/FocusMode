@@ -9,36 +9,18 @@ OK HTSave
 == HTTranslate ==
 OK HTTranslate
 == HTOnline ==
-src/HTOnline.m:77:169: warning: null passed to a callee that requires a non-null argument [-Wnonnull]
-   77 |         [UNUserNotificationCenter.currentNotificationCenter requestAuthorizationWithOptions:(UNAuthorizationOptionAlert | UNAuthorizationOptionSound) completionHandler:nil];
-      |                                                                                                                                                                         ^~~
-/Applications/Xcode_26.6.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS26.5.sdk/usr/include/MacTypes.h:96:19: note: expanded from macro 'nil'
-   96 |       #define nil __DARWIN_NULL
-      |                   ^~~~~~~~~~~~~
-/Applications/Xcode_26.6.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS26.5.sdk/usr/include/sys/_types.h:64:23: note: expanded from macro '__DARWIN_NULL'
-   64 | #define __DARWIN_NULL ((void *)0)
-      |                       ^~~~~~~~~~~
-1 warning generated.
 OK HTOnline
 == FocusMode (all-in-one) ==
-src/HTTranslate.m:50:26: error: call to undeclared function 'raAccent'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
-   50 |     go.backgroundColor = raAccent();
-      |                          ^
-src/HTTranslate.m:50:26: error: implicit conversion of 'int' to 'UI_APPEARANCE_SELECTOR UIColor *' is disallowed with ARC
-   50 |     go.backgroundColor = raAccent();
-      |                          ^~~~~~~~~~
-src/HTTranslate.m:50:24: error: incompatible integer to pointer conversion assigning to 'UI_APPEARANCE_SELECTOR UIColor *' from 'int' [-Wint-conversion]
-   50 |     go.backgroundColor = raAccent();
-      |                        ^ ~~~~~~~~~~
-3 errors generated.
-total 3480
-drwxr-xr-x  10 runner  staff     320 Oct 27 12:19 .
-drwxr-xr-x   8 runner  staff     256 Oct 27 12:19 ..
--rw-r--r--   1 runner  staff    1901 Oct 27 12:19 build.log
--rwxr-xr-x   1 runner  staff  286544 Oct 27 12:19 HTAds.dylib
--rwxr-xr-x   1 runner  staff  307360 Oct 27 12:19 HTDict.dylib
--rwxr-xr-x   1 runner  staff  282656 Oct 27 12:19 HTFix.dylib
--rwxr-xr-x   1 runner  staff  288688 Oct 27 12:19 HTOnline.dylib
--rwxr-xr-x   1 runner  staff  288464 Oct 27 12:19 HTSave.dylib
--rwxr-xr-x   1 runner  staff  310096 Oct 27 12:19 HTTranslate.dylib
-drwxr-xr-x   6 runner  staff     192 Oct 27 12:19 obj
+OK FocusMode
+total 4248
+drwxr-xr-x  11 runner  staff     352 Oct 27 12:20 .
+drwxr-xr-x   8 runner  staff     256 Oct 27 12:20 ..
+-rw-r--r--   1 runner  staff     190 Oct 27 12:20 build.log
+-rwxr-xr-x   1 runner  staff  391248 Oct 27 12:20 FocusMode.dylib
+-rwxr-xr-x   1 runner  staff  286544 Oct 27 12:20 HTAds.dylib
+-rwxr-xr-x   1 runner  staff  307360 Oct 27 12:20 HTDict.dylib
+-rwxr-xr-x   1 runner  staff  282656 Oct 27 12:20 HTFix.dylib
+-rwxr-xr-x   1 runner  staff  288832 Oct 27 12:20 HTOnline.dylib
+-rwxr-xr-x   1 runner  staff  288464 Oct 27 12:20 HTSave.dylib
+-rwxr-xr-x   1 runner  staff  310096 Oct 27 12:20 HTTranslate.dylib
+drwxr-xr-x   9 runner  staff     288 Oct 27 12:20 obj
