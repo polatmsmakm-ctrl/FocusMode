@@ -16,6 +16,7 @@ jobs:
           SDK=$(xcrun --sdk iphoneos --show-sdk-path)
           clang -arch arm64 \
                 -dynamiclib \
+                -fobjc-arc \
                 -isysroot "$SDK" \
                 -miphoneos-version-min=15.0 \
                 -framework UIKit \
