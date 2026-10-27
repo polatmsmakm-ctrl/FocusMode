@@ -53,6 +53,9 @@ static NSString *raIcon(NSString *k) {
     if ([k hasPrefix:@"x.dl"]) return @"arrow.down.circle.fill";
     if ([k hasPrefix:@"ht.ads"]) return @"nosign";
     if ([k hasPrefix:@"ht.dict"]) return @"book.fill";
+    if ([k hasPrefix:@"ht.save"]) return @"arrow.down.circle.fill";
+    if ([k hasPrefix:@"ht.translate"]) return @"globe";
+    if ([k hasPrefix:@"ht.online"]) return @"dot.radiowaves.left.and.right";
     return @"sparkles";
 }
 
@@ -118,7 +121,7 @@ static NSString *raIcon(NSString *k) {
     _table.tableHeaderView = h;
 
     // footer: credit
-    UIView *f = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 100, 200)];
+    UIView *f = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 100, 240)];
     UIView *line = [[UIView alloc] initWithFrame:CGRectMake(0, 22, 60, 1)];
     line.backgroundColor = [UIColor colorWithWhite:1 alpha:0.25];
     line.autoresizingMask = UIViewAutoresizingFlexibleLeftMargin | UIViewAutoresizingFlexibleRightMargin;
@@ -149,6 +152,15 @@ static NSString *raIcon(NSString *k) {
     dict.titleLabel.font = [UIFont systemFontOfSize:13 weight:UIFontWeightMedium];
     [dict addTarget:self action:@selector(dict) forControlEvents:UIControlEventTouchUpInside];
     [f addSubview:dict];
+    UIButton *tr = [UIButton buttonWithType:UIButtonTypeCustom];
+    tr.bounds = CGRectMake(0, 0, 170, 34);
+    tr.center = CGPointMake(50, 176);
+    tr.layer.cornerRadius = 17;
+    tr.backgroundColor = [UIColor colorWithWhite:1 alpha:0.14];
+    [tr setTitle:@"🌐 ترجمة" forState:UIControlStateNormal];
+    tr.titleLabel.font = [UIFont systemFontOfSize:13 weight:UIFontWeightMedium];
+    [tr addTarget:self action:@selector(translate) forControlEvents:UIControlEventTouchUpInside];
+    [f addSubview:tr];
     _table.tableFooterView = f;
 
     // close button
@@ -183,6 +195,10 @@ static NSString *raIcon(NSString *k) {
 - (void)dict {
     // HTDict listens; it presents the dictionary on top of this menu
     [NSNotificationCenter.defaultCenter postNotificationName:@"ra.dict" object:self];
+}
+- (void)translate {
+    // HTTranslate listens; it presents the translator on top of this menu
+    [NSNotificationCenter.defaultCenter postNotificationName:@"ra.translate" object:self];
 }
 - (NSArray *)groups {
     NSMutableArray *names = [NSMutableArray new];
