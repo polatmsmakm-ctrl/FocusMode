@@ -47,7 +47,7 @@ static NSArray<NSArray<NSString *> *> *gLangs;   // [[code, Arabic display name]
     UIButton *go = [UIButton buttonWithType:UIButtonTypeSystem];
     [go setTitle:@"ترجم" forState:UIControlStateNormal];
     go.titleLabel.font = [UIFont boldSystemFontOfSize:16];
-    go.backgroundColor = raAccent();
+    go.backgroundColor = [UIColor colorWithRed:0.55 green:0.58 blue:1.0 alpha:1];
     [go setTitleColor:UIColor.whiteColor forState:UIControlStateNormal];
     go.layer.cornerRadius = 10;
     [go addTarget:self action:@selector(go) forControlEvents:UIControlEventTouchUpInside];

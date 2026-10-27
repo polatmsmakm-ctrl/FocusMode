@@ -74,7 +74,7 @@ __attribute__((constructor)) static void init(void) {
     raRegisterD(@"الإضافات", @"ht.online", @"تنبيه لما شريكك يصير أونلاين",
                 @"يشتغل بس إذا شارة الحالة ظاهرة على شاشتك حالياً (شات/بروفايل) — ما يراقب بالخلفية وقت التطبيق مقفول", NO);
     igdRun(@"HTOnline", BUILD, ^{
-        [UNUserNotificationCenter.currentNotificationCenter requestAuthorizationWithOptions:(UNAuthorizationOptionAlert | UNAuthorizationOptionSound) completionHandler:nil];
+        [UNUserNotificationCenter.currentNotificationCenter requestAuthorizationWithOptions:(UNAuthorizationOptionAlert | UNAuthorizationOptionSound) completionHandler:^(BOOL granted, NSError *err) {}];
         hookOnlineStatusView();
         NSTimer *timer = [NSTimer timerWithTimeInterval:3.0 repeats:YES block:^(NSTimer *t) { poll(); }];
         [NSRunLoop.mainRunLoop addTimer:timer forMode:NSRunLoopCommonModes];
