@@ -83,7 +83,7 @@ static void hookVoicePlayer(void) {
     if (!m) { [igdStatus() addObject:@"✗ AVAudioPlayer initWithContentsOfURL:error: (no method)"]; return; }
     IMP orig = method_getImplementation(m);
     method_setImplementation(m, imp_implementationWithBlock(^id(AVAudioPlayer *self, NSURL *url, NSError **err) {
-        id r = ((id (*)(id, SEL, id, id))orig)(self, sel, url, err);
+        id r = ((id (*)(id, SEL, id, NSError **))orig)(self, sel, url, err);
         if (raOn(@"ht.save.voice")) gLastVoiceURL = url;
         return r;
     }));

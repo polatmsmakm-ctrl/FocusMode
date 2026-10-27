@@ -8,7 +8,7 @@
 
 static NSArray<NSArray<NSString *> *> *gLangs;   // [[code, Arabic display name], ...]
 
-@interface HTTranslateVC : UIViewController <UITextViewDelegate, UIPickerViewDataSource, UIPickerViewDelegate>
+@interface HTTranslateVC : UIViewController <UITextViewDelegate>
 @property (nonatomic, strong) UITextView *input;
 @property (nonatomic, strong) UILabel *output;
 @property (nonatomic, strong) UIActivityIndicatorView *spinner;
