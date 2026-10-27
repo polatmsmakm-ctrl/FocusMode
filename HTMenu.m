@@ -268,13 +268,22 @@
     overlay.windowLevel = UIWindowLevelAlert + 1; // فوق كل شي بالتطبيق
     overlay.backgroundColor = [UIColor clearColor];
 
+    // نبني الفيو بحجم صريح (0,0,size,size) يدوياً، ولا نترك UIKit يسوي
+    // الفيو الافتراضي تلقائياً — هذا بالضبط كان سبب المشكلة: الفيو
+    // الافتراضي كان ينولد بحجم الشاشة كاملة (قبل ما ينضم للنافذة
+    // الصغيرة)، فيطلع الزر ممتد كخانة طويلة، وموقع اللمس الحقيقي يصير
+    // بس داخل النافذة الصغيرة (52×52) اللي ما تتطابق مع شكله الظاهر.
+    UIView *container = [[UIView alloc] initWithFrame:CGRectMake(0, 0, size, size)];
+    container.backgroundColor = [UIColor clearColor];
+    container.clipsToBounds = YES; // ضمان إضافي: أي شي يفيض عن حجم الزر ينقص، ما يفيض على الشاشة
+
     UIViewController *vc = [[UIViewController alloc] init];
-    vc.view.backgroundColor = [UIColor clearColor];
+    vc.view = container;
     overlay.rootViewController = vc;
 
-    HTMenuButton *btn = [[HTMenuButton alloc] initWithFrame:vc.view.bounds];
+    HTMenuButton *btn = [[HTMenuButton alloc] initWithFrame:container.bounds];
     [btn addTarget:self action:@selector(menuTapped:) forControlEvents:UIControlEventTouchUpInside];
-    [vc.view addSubview:btn];
+    [container addSubview:btn];
 
     overlay.hidden = NO;
     self.overlayWindow = overlay; // نحتفظ بمرجع لها وإلا تنمسح من الذاكرة
