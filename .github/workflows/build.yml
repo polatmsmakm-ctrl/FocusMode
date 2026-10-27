@@ -20,6 +20,7 @@ jobs:
                 -miphoneos-version-min=15.0 \
                 -framework UIKit \
                 -framework Foundation \
+                -framework CoreGraphics \
                 -install_name "@executable_path/Frameworks/FocusMode.dylib" \
                 -o FocusMode.dylib \
                 FocusMode.m
