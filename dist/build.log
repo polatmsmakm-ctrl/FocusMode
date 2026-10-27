@@ -5,27 +5,8 @@ OK HTAds
 == HTDict ==
 OK HTDict
 == HTSave ==
-src/HTSave.m:86:64: error: implicit conversion of an indirect pointer to an Objective-C pointer to 'id' is disallowed with ARC
-   86 |         id r = ((id (*)(id, SEL, id, id))orig)(self, sel, url, err);
-      |                                                                ^~~
-src/HTSave.m:86:64: warning: incompatible pointer types passing 'NSError *__autoreleasing *' to parameter of type '__strong id' [-Wincompatible-pointer-types]
-   86 |         id r = ((id (*)(id, SEL, id, id))orig)(self, sel, url, err);
-      |                                                                ^~~
-1 warning and 1 error generated.
+OK HTSave
 == HTTranslate ==
-src/HTTranslate.m:20:17: warning: method 'numberOfComponentsInPickerView:' in protocol 'UIPickerViewDataSource' not implemented [-Wprotocol]
-   20 | @implementation HTTranslateVC
-      |                 ^
-/Applications/Xcode_26.6.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS26.5.sdk/System/Library/Frameworks/UIKit.framework/Headers/UIPickerView.h:52:1: note: method 'numberOfComponentsInPickerView:' declared here
-   52 | - (NSInteger)numberOfComponentsInPickerView:(UIPickerView *)pickerView;
-      | ^
-src/HTTranslate.m:20:17: warning: method 'pickerView:numberOfRowsInComponent:' in protocol 'UIPickerViewDataSource' not implemented [-Wprotocol]
-   20 | @implementation HTTranslateVC
-      |                 ^
-/Applications/Xcode_26.6.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS26.5.sdk/System/Library/Frameworks/UIKit.framework/Headers/UIPickerView.h:55:1: note: method 'pickerView:numberOfRowsInComponent:' declared here
-   55 | - (NSInteger)pickerView:(UIPickerView *)pickerView numberOfRowsInComponent:(NSInteger)component;
-      | ^
-2 warnings generated.
 OK HTTranslate
 == HTOnline ==
 src/HTOnline.m:77:169: warning: null passed to a callee that requires a non-null argument [-Wnonnull]
@@ -40,20 +21,24 @@ src/HTOnline.m:77:169: warning: null passed to a callee that requires a non-null
 1 warning generated.
 OK HTOnline
 == FocusMode (all-in-one) ==
-src/HTSave.m:86:64: error: implicit conversion of an indirect pointer to an Objective-C pointer to 'id' is disallowed with ARC
-   86 |         id r = ((id (*)(id, SEL, id, id))orig)(self, sel, url, err);
-      |                                                                ^~~
-src/HTSave.m:86:64: warning: incompatible pointer types passing 'NSError *__autoreleasing *' to parameter of type '__strong id' [-Wincompatible-pointer-types]
-   86 |         id r = ((id (*)(id, SEL, id, id))orig)(self, sel, url, err);
-      |                                                                ^~~
-1 warning and 1 error generated.
-total 2912
-drwxr-xr-x  9 runner  staff     288 Oct 27 12:19 .
-drwxr-xr-x  8 runner  staff     256 Oct 27 12:18 ..
--rw-r--r--  1 runner  staff    3539 Oct 27 12:19 build.log
--rwxr-xr-x  1 runner  staff  286544 Oct 27 12:19 HTAds.dylib
--rwxr-xr-x  1 runner  staff  307360 Oct 27 12:19 HTDict.dylib
--rwxr-xr-x  1 runner  staff  282656 Oct 27 12:19 HTFix.dylib
--rwxr-xr-x  1 runner  staff  288688 Oct 27 12:19 HTOnline.dylib
--rwxr-xr-x  1 runner  staff  310736 Oct 27 12:19 HTTranslate.dylib
-drwxr-xr-x  5 runner  staff     160 Oct 27 12:19 obj
+src/HTTranslate.m:50:26: error: call to undeclared function 'raAccent'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
+   50 |     go.backgroundColor = raAccent();
+      |                          ^
+src/HTTranslate.m:50:26: error: implicit conversion of 'int' to 'UI_APPEARANCE_SELECTOR UIColor *' is disallowed with ARC
+   50 |     go.backgroundColor = raAccent();
+      |                          ^~~~~~~~~~
+src/HTTranslate.m:50:24: error: incompatible integer to pointer conversion assigning to 'UI_APPEARANCE_SELECTOR UIColor *' from 'int' [-Wint-conversion]
+   50 |     go.backgroundColor = raAccent();
+      |                        ^ ~~~~~~~~~~
+3 errors generated.
+total 3480
+drwxr-xr-x  10 runner  staff     320 Oct 27 12:19 .
+drwxr-xr-x   8 runner  staff     256 Oct 27 12:19 ..
+-rw-r--r--   1 runner  staff    1901 Oct 27 12:19 build.log
+-rwxr-xr-x   1 runner  staff  286544 Oct 27 12:19 HTAds.dylib
+-rwxr-xr-x   1 runner  staff  307360 Oct 27 12:19 HTDict.dylib
+-rwxr-xr-x   1 runner  staff  282656 Oct 27 12:19 HTFix.dylib
+-rwxr-xr-x   1 runner  staff  288688 Oct 27 12:19 HTOnline.dylib
+-rwxr-xr-x   1 runner  staff  288464 Oct 27 12:19 HTSave.dylib
+-rwxr-xr-x   1 runner  staff  310096 Oct 27 12:19 HTTranslate.dylib
+drwxr-xr-x   6 runner  staff     192 Oct 27 12:19 obj
