@@ -22,6 +22,17 @@
 // OTHER account whether it still shows as read. If it doesn't work, the real check happens
 // somewhere this hook doesn't reach, and the toggle should stay off.
 //
+// UPDATE after on-device testing confirmed it does nothing: this toggle genuinely does not gate
+// the real read-receipt send. Dug further — the actual function (a private Swift method, roughly
+// `sendReadReceiptToServer(sessionId:)`) has no Objective-C selector at all, so the usual runtime
+// swizzle this project uses everywhere else can't reach it. Finding and patching its exact machine
+// code would need a real disassembler (IDA/Hopper/Ghidra-class tooling) to resolve its address
+// through this binary's modern chained-fixup pointers and data mixed into the code section —
+// tooling this environment doesn't have. A linear capstone sweep was tried and is unreliable here
+// (it loses sync inside the first couple MB of __text), so blindly patching raw instruction bytes
+// from a guessed address was judged too likely to crash the app to ship. Left off by default and
+// not worth turning on until someone finds the real hook point with better tooling.
+//
 // The eye button: works the same as IGSeen's — tap it to send "seen" for the open chat on
 // purpose. Since there's no known callable "send seen now" method, it works by temporarily
 // lifting the override and re-running the chat screen's own on-appear logic (which is what
