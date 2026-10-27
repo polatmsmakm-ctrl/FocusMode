@@ -206,6 +206,20 @@
 
 @end
 
+#pragma mark - فيو شفاف يمرّر اللمس لكل مكان إلا على الزر نفسه
+
+@interface HTPassthroughView : UIView
+@end
+
+@implementation HTPassthroughView
+- (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event {
+    UIView *hit = [super hitTest:point withEvent:event];
+    // لو اللمسة وقعت على الخلفية الشفافة نفسها (مو على الزر)، نرجّع nil
+    // عشان تنزل اللمسة لنافذة التطبيق اللي تحتنا بدل ما تتجمد الشاشة.
+    return (hit == self) ? nil : hit;
+}
+@end
+
 #pragma mark - القائمة الرئيسية + تركيب الزر على الشاشة
 
 @interface HTMenuController : NSObject
@@ -249,6 +263,7 @@
     overlay.backgroundColor = [UIColor clearColor];
 
     UIViewController *passthroughVC = [[UIViewController alloc] init];
+    passthroughVC.view = [[HTPassthroughView alloc] initWithFrame:overlay.bounds];
     passthroughVC.view.backgroundColor = [UIColor clearColor];
     overlay.rootViewController = passthroughVC;
 
