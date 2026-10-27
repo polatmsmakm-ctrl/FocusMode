@@ -209,8 +209,9 @@
 #pragma mark - القائمة الرئيسية + تركيب الزر على الشاشة
 
 @interface HTMenuController : NSObject
+@property (nonatomic, strong) UIWindow *overlayWindow; // نافذة مستقلة فوق كل شي، بدل ما نضيف الزر كـ subview داخل نافذة التطبيق (كان هذا سبب اختفاء الزر: أي شاشة جديدة تفتح بالتطبيق تغطي عليه)
 + (instancetype)shared;
-- (void)attachToKeyWindow;
+- (void)attachOverlay;
 @end
 
 @implementation HTMenuController
@@ -222,26 +223,46 @@
     return inst;
 }
 
-- (void)attachToKeyWindow {
-    UIWindow *keyWindow = nil;
+- (UIWindowScene *)activeScene {
     for (UIWindowScene *scene in UIApplication.sharedApplication.connectedScenes) {
-        if (scene.activationState == UISceneActivationStateForegroundActive) {
-            for (UIWindow *w in scene.windows) {
-                if (w.isKeyWindow) { keyWindow = w; break; }
-            }
+        if ([scene isKindOfClass:[UIWindowScene class]] &&
+            scene.activationState == UISceneActivationStateForegroundActive) {
+            return scene;
         }
     }
-    if (!keyWindow) return;
-    if ([keyWindow viewWithTag:778899]) return; // ما نكرر الزر
+    // احتياط: أي مشهد نوافذ موجود حتى لو مو "نشط" رسمياً بعد
+    for (id scene in UIApplication.sharedApplication.connectedScenes) {
+        if ([scene isKindOfClass:[UIWindowScene class]]) return scene;
+    }
+    return nil;
+}
+
+- (void)attachOverlay {
+    if (self.overlayWindow) return; // مركّبة مسبقاً
+
+    UIWindowScene *scene = [self activeScene];
+    if (!scene) return;
+
+    UIWindow *overlay = [[UIWindow alloc] initWithWindowScene:scene];
+    overlay.frame = scene.coordinateSpace.bounds;
+    overlay.windowLevel = UIWindowLevelAlert + 1; // فوق كل شي بالتطبيق، حتى الـ alerts
+    overlay.backgroundColor = [UIColor clearColor];
+
+    UIViewController *passthroughVC = [[UIViewController alloc] init];
+    passthroughVC.view.backgroundColor = [UIColor clearColor];
+    overlay.rootViewController = passthroughVC;
 
     CGFloat size = 52;
-    HTMenuButton *btn = [[HTMenuButton alloc] initWithFrame:CGRectMake(keyWindow.bounds.size.width - size - 16,
-                                                                        keyWindow.bounds.size.height * 0.6,
+    HTMenuButton *btn = [[HTMenuButton alloc] initWithFrame:CGRectMake(overlay.bounds.size.width - size - 16,
+                                                                        overlay.bounds.size.height * 0.6,
                                                                         size, size)];
-    btn.tag = 778899;
     [btn addTarget:self action:@selector(menuTapped:) forControlEvents:UIControlEventTouchUpInside];
-    [keyWindow addSubview:btn];
-    keyWindow.windowLevel = keyWindow.windowLevel; // يبقى فوق محتوى التطبيق العادي
+    [passthroughVC.view addSubview:btn];
+
+    overlay.hidden = NO;
+    self.overlayWindow = overlay; // نحتفظ بمرجع لها وإلا تنمسح من الذاكرة
+
+    NSLog(@"[HTMenu] 🟢 الزر تركّب فوق الشاشة.");
 }
 
 - (void)menuTapped:(UIButton *)sender {
@@ -286,13 +307,50 @@
 
 @end
 
+static void HTMenuShowLoadConfirmationOnce(void) {
+    // تنبيه يطلع مرة وحدة بس، أول ما التطبيق يفتح، عشان تتأكد "بعينك" إن
+    // الدايلب محقون وشغال — بغض النظر عن أي مشكلة بالزر نفسه لاحقاً.
+    static BOOL shown = NO;
+    if (shown) return;
+    shown = YES;
+    UIViewController *root = [[HTMenuController shared] topViewController];
+    if (!root) return;
+    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"✅ HTMenu شغال"
+                                                                     message:@"الدايلب محقون صح. لو ما طلع الزر العائم بعد إغلاق هذي الرسالة، قولي."
+                                                              preferredStyle:UIAlertControllerStyleAlert];
+    [alert addAction:[UIAlertAction actionWithTitle:@"تمام" style:UIAlertActionStyleDefault handler:nil]];
+    [root presentViewController:alert animated:YES completion:nil];
+}
+
+static void HTMenuAttemptAttach(void) {
+    [[HTMenuController shared] attachOverlay];
+    HTMenuShowLoadConfirmationOnce();
+}
+
 __attribute__((constructor))
 static void HTMenuInit(void) {
+    NSLog(@"[HTMenu] تم تحميل الدايلب (constructor اشتغل).");
+
     [[NSNotificationCenter defaultCenter] addObserverForName:UIApplicationDidBecomeActiveNotification
                                                        object:nil
                                                         queue:[NSOperationQueue mainQueue]
                                                    usingBlock:^(NSNotification * _Nonnull note) {
-        [[HTMenuController shared] attachToKeyWindow];
+        HTMenuAttemptAttach();
     }];
+
+    // محاولات متكررة لأول 15 ثانية فقط، تحسباً إذا المشهد (scene) ما كان
+    // جاهز وقت أول إشعار. بعد كذا تتوقف تلقائياً.
+    dispatch_async(dispatch_get_main_queue(), ^{
+        __block NSInteger attempts = 0;
+        NSTimer *retry = [NSTimer scheduledTimerWithTimeInterval:1.0 repeats:YES block:^(NSTimer * _Nonnull timer) {
+            attempts++;
+            HTMenuAttemptAttach();
+            if ([HTMenuController shared].overlayWindow || attempts >= 15) {
+                [timer invalidate];
+            }
+        }];
+        [[NSRunLoop mainRunLoop] addTimer:retry forMode:NSRunLoopCommonModes];
+    });
+
     NSLog(@"[HTMenu] تم التفعيل — زر القائمة العائم (فيه القاموس) جاهز.");
 }
