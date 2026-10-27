@@ -37,21 +37,32 @@
     return self;
 }
 
+// نحرّك نافذة الزر نفسها (مو الزر داخل superview)، لأن النافذة الحين
+// بحجم الزر بالضبط — مو شاشة كاملة. هذا يضمن إن أي لمسة برّا الزر
+// تروح للتطبيق تحته طبيعياً، بدون أي حيلة hit-test.
 - (void)handlePan:(UIPanGestureRecognizer *)pan {
-    UIView *superview = self.superview;
-    if (!superview) return;
-    CGPoint translation = [pan translationInView:superview];
-    self.center = CGPointMake(self.center.x + translation.x, self.center.y + translation.y);
-    [pan setTranslation:CGPointZero inView:superview];
+    UIWindow *win = self.window;
+    if (!win) return;
+    CGPoint translation = [pan translationInView:win];
+    CGRect frame = win.frame;
+    frame.origin.x += translation.x;
+    frame.origin.y += translation.y;
+    win.frame = frame;
+    [pan setTranslation:CGPointZero inView:win];
 
     if (pan.state == UIGestureRecognizerStateEnded) {
-        // يثبّت الزر على أقرب حافة (يمين أو يسار) بعد ما تسحبه
+        CGRect screenBounds = win.windowScene.coordinateSpace.bounds;
         CGFloat margin = 16;
-        CGFloat targetX = (self.center.x < superview.bounds.size.width / 2.0)
-            ? (self.bounds.size.width / 2.0 + margin)
-            : (superview.bounds.size.width - self.bounds.size.width / 2.0 - margin);
+        CGFloat centerX = CGRectGetMidX(win.frame);
+        CGFloat targetX = (centerX < screenBounds.size.width / 2.0)
+            ? margin
+            : (screenBounds.size.width - win.frame.size.width - margin);
+        CGFloat clampedY = MAX(margin, MIN(win.frame.origin.y, screenBounds.size.height - win.frame.size.height - margin));
+        CGRect finalFrame = win.frame;
+        finalFrame.origin.x = targetX;
+        finalFrame.origin.y = clampedY;
         [UIView animateWithDuration:0.25 animations:^{
-            self.center = CGPointMake(targetX, self.center.y);
+            win.frame = finalFrame;
         }];
     }
 }
@@ -206,20 +217,6 @@
 
 @end
 
-#pragma mark - فيو شفاف يمرّر اللمس لكل مكان إلا على الزر نفسه
-
-@interface HTPassthroughView : UIView
-@end
-
-@implementation HTPassthroughView
-- (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event {
-    UIView *hit = [super hitTest:point withEvent:event];
-    // لو اللمسة وقعت على الخلفية الشفافة نفسها (مو على الزر)، نرجّع nil
-    // عشان تنزل اللمسة لنافذة التطبيق اللي تحتنا بدل ما تتجمد الشاشة.
-    return (hit == self) ? nil : hit;
-}
-@end
-
 #pragma mark - القائمة الرئيسية + تركيب الزر على الشاشة
 
 @interface HTMenuController : NSObject
@@ -257,22 +254,27 @@
     UIWindowScene *scene = [self activeScene];
     if (!scene) return;
 
+    // النافذة بحجم الزر بالضبط (مو الشاشة كاملة) — فما فيها أي مساحة
+    // تقدر "تمسك" لمسة ما تخصها. هذي أبسط وأضمن طريقة لزر عائم.
+    CGFloat size = 52;
+    CGFloat margin = 16;
+    CGRect screenBounds = scene.coordinateSpace.bounds;
+    CGRect btnFrame = CGRectMake(screenBounds.size.width - size - margin,
+                                  screenBounds.size.height * 0.6,
+                                  size, size);
+
     UIWindow *overlay = [[UIWindow alloc] initWithWindowScene:scene];
-    overlay.frame = scene.coordinateSpace.bounds;
-    overlay.windowLevel = UIWindowLevelAlert + 1; // فوق كل شي بالتطبيق، حتى الـ alerts
+    overlay.frame = btnFrame;
+    overlay.windowLevel = UIWindowLevelAlert + 1; // فوق كل شي بالتطبيق
     overlay.backgroundColor = [UIColor clearColor];
 
-    UIViewController *passthroughVC = [[UIViewController alloc] init];
-    passthroughVC.view = [[HTPassthroughView alloc] initWithFrame:overlay.bounds];
-    passthroughVC.view.backgroundColor = [UIColor clearColor];
-    overlay.rootViewController = passthroughVC;
+    UIViewController *vc = [[UIViewController alloc] init];
+    vc.view.backgroundColor = [UIColor clearColor];
+    overlay.rootViewController = vc;
 
-    CGFloat size = 52;
-    HTMenuButton *btn = [[HTMenuButton alloc] initWithFrame:CGRectMake(overlay.bounds.size.width - size - 16,
-                                                                        overlay.bounds.size.height * 0.6,
-                                                                        size, size)];
+    HTMenuButton *btn = [[HTMenuButton alloc] initWithFrame:vc.view.bounds];
     [btn addTarget:self action:@selector(menuTapped:) forControlEvents:UIControlEventTouchUpInside];
-    [passthroughVC.view addSubview:btn];
+    [vc.view addSubview:btn];
 
     overlay.hidden = NO;
     self.overlayWindow = overlay; // نحتفظ بمرجع لها وإلا تنمسح من الذاكرة
