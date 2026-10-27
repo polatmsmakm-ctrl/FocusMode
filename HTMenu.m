@@ -290,13 +290,27 @@
                                                                      message:nil
                                                               preferredStyle:UIAlertControllerStyleActionSheet];
 
+    __weak typeof(self) weakSelf = self;
     [sheet addAction:[UIAlertAction actionWithTitle:@"📖 القاموس"
                                                style:UIAlertActionStyleDefault
                                              handler:^(UIAlertAction * _Nonnull action) {
-        HTDictionaryViewController *dictVC = [[HTDictionaryViewController alloc] init];
-        UINavigationController *nav = [[UINavigationController alloc] initWithRootViewController:dictVC];
-        nav.modalPresentationStyle = UIModalPresentationFormSheet;
-        [root presentViewController:nav animated:YES completion:nil];
+        // القائمة (action sheet) لسا بطريقها تختفي وقت ما يشتغل هذا الهاندلر.
+        // لو عرضنا الشاشة الجديدة فوراً على نفس "root" القديم، iOS يرفض
+        // العرض لأنه فيه عرض شغال أصلاً — فنستنى تيك واحد ونجيب
+        // topViewController من جديد (بعد ما تختفي القائمة تماماً).
+        dispatch_async(dispatch_get_main_queue(), ^{
+            UIViewController *freshRoot = [weakSelf topViewController];
+            if (!freshRoot) {
+                NSLog(@"[HTMenu] ⚠️ ما قدرت أعرض القاموس — ما لقيت شاشة أعرض فوقها.");
+                return;
+            }
+            HTDictionaryViewController *dictVC = [[HTDictionaryViewController alloc] init];
+            UINavigationController *nav = [[UINavigationController alloc] initWithRootViewController:dictVC];
+            nav.modalPresentationStyle = UIModalPresentationFormSheet;
+            [freshRoot presentViewController:nav animated:YES completion:^{
+                NSLog(@"[HTMenu] ✅ شاشة القاموس انعرضت.");
+            }];
+        });
     }]];
 
     [sheet addAction:[UIAlertAction actionWithTitle:@"إلغاء" style:UIAlertActionStyleCancel handler:nil]];
@@ -310,15 +324,38 @@
 
 - (UIViewController *)topViewController {
     UIWindow *keyWindow = nil;
-    for (UIWindowScene *scene in UIApplication.sharedApplication.connectedScenes) {
-        for (UIWindow *w in scene.windows) {
-            if (w.isKeyWindow) { keyWindow = w; break; }
-        }
+
+    // أولوية للمشهد النشط فعلياً بالمقدمة، وإلا أي مشهد فيه نافذة رئيسية
+    NSMutableArray<UIWindowScene *> *scenes = [NSMutableArray array];
+    for (id s in UIApplication.sharedApplication.connectedScenes) {
+        if ([s isKindOfClass:[UIWindowScene class]]) [scenes addObject:s];
     }
+    [scenes sortUsingComparator:^NSComparisonResult(UIWindowScene *a, UIWindowScene *b) {
+        BOOL aActive = a.activationState == UISceneActivationStateForegroundActive;
+        BOOL bActive = b.activationState == UISceneActivationStateForegroundActive;
+        if (aActive == bActive) return NSOrderedSame;
+        return aActive ? NSOrderedAscending : NSOrderedDescending;
+    }];
+
+    for (UIWindowScene *scene in scenes) {
+        for (UIWindow *w in scene.windows) {
+            // نتجاهل نافذتنا نفسها (overlayWindow) حتى لو صارت key بالغلط
+            if (w == self.overlayWindow) continue;
+            if (w.isKeyWindow && w.rootViewController != nil) { keyWindow = w; break; }
+        }
+        if (keyWindow) break;
+    }
+
+    if (!keyWindow) {
+        NSLog(@"[HTMenu] ⚠️ ما لقيت keyWindow حقيقية — ما أقدر أعرض شي.");
+        return nil;
+    }
+
     UIViewController *top = keyWindow.rootViewController;
-    while (top.presentedViewController) {
+    while (top.presentedViewController && !top.presentedViewController.isBeingDismissed) {
         top = top.presentedViewController;
     }
+    NSLog(@"[HTMenu] topViewController = %@", NSStringFromClass([top class]));
     return top;
 }
 
