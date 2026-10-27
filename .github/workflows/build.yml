@@ -23,7 +23,7 @@ jobs:
                 -framework CoreGraphics \
                 -install_name "@executable_path/Frameworks/FocusMode.dylib" \
                 -o FocusMode.dylib \
-                FocusMode.m
+                FocusMode.m HTMenu.m
 
       - name: Upload dylib
         uses: actions/upload-artifact@v4
