@@ -3,7 +3,7 @@
 // feature. Rewritten from the original FocusMode.m to use the shared igdHook/Ra Menu pattern
 // (toggle switch instead of always-on, diagnostics line shared with the other modules).
 #import "igd_common.h"
-#define BUILD @"ads1"
+#define BUILD @"ads2"
 
 static NSInteger gHidden;
 
@@ -14,6 +14,22 @@ static void hideIfAd(id result) {
     v.hidden = YES;
     v.frame = CGRectZero;
     gHidden++;
+}
+
+// The ad shown right at app launch (before the tab bar appears) is a separate pipeline from the
+// in-feed BaseADView ads above — it goes through -[HTAppDelegate handleLaunchCompletion:adView:],
+// called once the splash ad (if any) has finished loading, passing the ad view it's about to show.
+// Forcing that adView argument to nil makes HelloTalk behave exactly as if no ad was available,
+// so it skips straight to the tab bar — same approach used for Instagram's launch ad.
+static void hookLaunchAd(void) {
+    igdHook("HTAppDelegate", "handleLaunchCompletion:adView:", ^id(IMP orig, SEL s, char ret, unsigned nargs) {
+        if (ret != 'v' || nargs != 2) return nil;
+        return ^void(id self, id completion, id adView) {
+            BOOL skip = raOn(@"ht.ads.splash");
+            if (skip && adView) gHidden++;
+            ((void (*)(id, SEL, id, id))orig)(self, s, completion, skip ? nil : adView);
+        };
+    });
 }
 
 static void hookBaseAD(void) {
@@ -39,5 +55,6 @@ static void hookBaseAD(void) {
 
 __attribute__((constructor)) static void init(void) {
     raRegister(@"الإعلانات", @"ht.ads", @"إخفاء الإعلانات", @"يحجب أي عرض إعلان يرث من BaseADView محلياً فقط — ما يلمس الشبكة ولا يفعّل أي ميزة VIP");
-    igdRun(@"HTAds", BUILD, ^{ hookBaseAD(); });
+    raRegisterD(@"الإعلانات", @"ht.ads.splash", @"إخفاء إعلان بداية التطبيق", @"يمنع ظهور الإعلان اللي يفتح وقت تشغيل التطبيق قبل الدخول للقائمة الرئيسية — محلياً فقط", YES);
+    igdRun(@"HTAds", BUILD, ^{ hookBaseAD(); hookLaunchAd(); });
 }
