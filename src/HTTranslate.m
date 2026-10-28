@@ -250,7 +250,9 @@ static NSArray<NSArray<NSString *> *> *gLangs;   // [[code, Arabic display name,
     [self.goBtn setTitle:@"" forState:UIControlStateNormal];
     NSString *from = gLangs[self.fromIdx][0], *to = gLangs[self.toIdx][0];
     NSString *esc = [text stringByAddingPercentEncodingWithAllowedCharacters:NSCharacterSet.URLQueryAllowedCharacterSet];
-    NSString *urlStr = [NSString stringWithFormat:@"https://api.mymemory.translated.net/get?q=%@&langpair=%@|%@", esc, from, to];
+    // the raw "|" below used to break NSURL parsing on newer iOS (stricter RFC 3986 checking makes
+    // URLWithString: return nil for an unescaped pipe) — that was the "تعذر تكوين الطلب" bug; %7C fixes it
+    NSString *urlStr = [NSString stringWithFormat:@"https://api.mymemory.translated.net/get?q=%@&langpair=%@%%7C%@", esc, from, to];
     NSURL *url = [NSURL URLWithString:urlStr];
     if (!url) { [self finishWithText:@"تعذر تكوين الطلب." isError:YES gen:myGen]; return; }
     NSURLSessionDataTask *t = [NSURLSession.sharedSession dataTaskWithURL:url completionHandler:^(NSData *data, NSURLResponse *resp, NSError *err) {

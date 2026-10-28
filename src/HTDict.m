@@ -2,19 +2,19 @@
 // Reachable two ways: the "📖 القاموس" button in Ra Menu's footer (ra.dict notification), and its
 // own small draggable floating button (independent of the main Ra logo button) for one-tap access.
 //
-// v3: a proper redesign on top of v2's phonetic/synonyms/recent-words additions — definitions are
-// now grouped into sections by part of speech (noun/verb/adjective/...) with Arabic section
-// headers, each shown in a real card-style cell (part-of-speech pill + definition + example in
-// gray italics + synonyms as a chip-style line) instead of one flat list of plain rows. Recent
-// words moved out of the table into their own horizontal chip strip. Every label's color is now
-// set explicitly (never UIKit's black-by-default) after a dark-mode bug elsewhere in this project
-// (HTTranslate) turned out to be exactly that mistake.
+// v4: real dictionary data. Uses the Merriam-Webster Collegiate Dictionary API when the user pastes
+// in their own free API key (gear icon → get one at dictionaryapi.com, free, ~1000 lookups/day) —
+// proper definitions, syllable-broken headword, MW's own phonetic transcription, real audio, and
+// "did you mean" suggestions for misspelled words. Falls back automatically to the free
+// dictionaryapi.dev lookup (no key needed) when no key is set or the key/request fails.
 #import "igd_common.h"
 #import <AVFoundation/AVFoundation.h>
-#define BUILD @"dict3"
+#import <ctype.h>
+#define BUILD @"dict4"
 
 #define HT_DICT_RECENT_KEY @"ht.dict.recent"
 #define HT_DICT_BTN_POS_KEY @"ht.dict.btn.pos"
+#define HT_DICT_MW_KEY @"ht.dict.mw.key"
 #define HT_DICT_RECENT_MAX 20
 
 static NSMutableArray<NSString *> *htDictRecent(void) {
@@ -29,11 +29,29 @@ static void htDictRemember(NSString *word) {
     [NSUserDefaults.standardUserDefaults setObject:r forKey:HT_DICT_RECENT_KEY];
 }
 static NSString *htDictPosArabic(NSString *pos) {
-    NSDictionary *map = @{@"noun": @"اسم", @"verb": @"فعل", @"adjective": @"صفة", @"adverb": @"ظرف",
-                           @"pronoun": @"ضمير", @"preposition": @"حرف جر", @"conjunction": @"حرف عطف",
-                           @"interjection": @"تعجب", @"exclamation": @"تعجب", @"determiner": @"أداة تعريف", @"article": @"أداة تعريف"};
-    NSString *m = map[pos.lowercaseString];
-    return m ?: (pos.length ? pos : @"—");
+    NSString *p = pos.lowercaseString;
+    if ([p containsString:@"verb"]) return @"فعل";
+    if ([p containsString:@"noun"]) return @"اسم";
+    if ([p containsString:@"adjective"]) return @"صفة";
+    if ([p containsString:@"adverb"]) return @"ظرف";
+    if ([p containsString:@"pronoun"]) return @"ضمير";
+    if ([p containsString:@"preposition"]) return @"حرف جر";
+    if ([p containsString:@"conjunction"]) return @"حرف عطف";
+    if ([p containsString:@"interjection"] || [p containsString:@"exclamation"]) return @"تعجب";
+    if ([p containsString:@"determiner"] || [p containsString:@"article"]) return @"أداة تعريف";
+    return pos.length ? pos : @"—";
+}
+// Merriam-Webster's CDN splits pronunciation mp3s into subfolders by a fixed, documented rule.
+static NSString *htMWAudioURL(NSString *audio) {
+    if (!audio.length) return nil;
+    NSString *subdir;
+    unichar c0 = [audio characterAtIndex:0];
+    if ([audio hasPrefix:@"bix"]) subdir = @"bix";
+    else if ([audio hasPrefix:@"gg"]) subdir = @"gg";
+    else if (c0 >= '0' && c0 <= '9') subdir = @"number";
+    else if (!isalpha(c0)) subdir = @"number";
+    else subdir = [[audio substringToIndex:1] lowercaseString];
+    return [NSString stringWithFormat:@"https://media.merriam-webster.com/audio/prons/en/us/mp3/%@/%@.mp3", subdir, audio];
 }
 
 // ---- a card-style cell for one definition ---------------------------------------------------
@@ -97,13 +115,13 @@ static NSString *htDictPosArabic(NSString *pos) {
 @property (nonatomic, strong) UITextField *field;
 @property (nonatomic, strong) UITableView *table;
 @property (nonatomic, strong) UIActivityIndicatorView *spinner;
-@property (nonatomic, strong) UILabel *phoneticLabel;
+@property (nonatomic, strong) UILabel *headwordLabel, *phoneticLabel, *sourceLabel;
 @property (nonatomic, strong) UIButton *playButton;
+@property (nonatomic, strong) UIView *resultHeader;
 @property (nonatomic, strong) UIScrollView *recentScroll;
 @property (nonatomic, strong) UIStackView *recentStack;
 @property (nonatomic, strong) NSArray<NSDictionary *> *groups;   // [{"pos": "noun", "rows": [{"definition","example","synonyms"}]}]
-@property (nonatomic, copy) NSString *emptyMessage;
-@property (nonatomic, strong) AVPlayer *player;
+@property (nonatomic, strong) NSArray<NSString *> *suggestions;
 @property (nonatomic, copy) NSString *pendingAudioURL;
 @property (nonatomic, assign) NSInteger requestGen;
 @end
@@ -114,8 +132,9 @@ static NSString *htDictPosArabic(NSString *pos) {
     self.view.backgroundColor = UIColor.systemBackgroundColor;
     self.title = @"القاموس";
     self.groups = @[];
-    self.emptyMessage = @"ابحث عن أي كلمة إنجليزية";
+    self.suggestions = @[];
     self.navigationItem.rightBarButtonItem = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemDone target:self action:@selector(close)];
+    self.navigationItem.leftBarButtonItem = [[UIBarButtonItem alloc] initWithImage:htSymbol(@"gearshape.fill", @"gear") style:UIBarButtonItemStylePlain target:self action:@selector(openSettings)];
 
     self.field = [UITextField new];
     self.field.borderStyle = UITextBorderStyleRoundedRect;
@@ -130,20 +149,53 @@ static NSString *htDictPosArabic(NSString *pos) {
     self.field.translatesAutoresizingMaskIntoConstraints = NO;
     [self.view addSubview:self.field];
 
+    // ---- result header card: headword + phonetic + source + play button ----------------------
+    self.resultHeader = [UIView new];
+    self.resultHeader.backgroundColor = UIColor.secondarySystemBackgroundColor;
+    self.resultHeader.layer.cornerRadius = 12;
+    self.resultHeader.translatesAutoresizingMaskIntoConstraints = NO;
+    self.resultHeader.hidden = YES;
+    [self.view addSubview:self.resultHeader];
+
+    self.headwordLabel = [UILabel new];
+    self.headwordLabel.font = [UIFont boldSystemFontOfSize:22];
+    self.headwordLabel.textColor = UIColor.labelColor;
+    self.headwordLabel.translatesAutoresizingMaskIntoConstraints = NO;
+    [self.resultHeader addSubview:self.headwordLabel];
+
     self.phoneticLabel = [UILabel new];
     self.phoneticLabel.font = [UIFont italicSystemFontOfSize:14];
     self.phoneticLabel.textColor = UIColor.secondaryLabelColor;
-    self.phoneticLabel.textAlignment = NSTextAlignmentRight;
     self.phoneticLabel.translatesAutoresizingMaskIntoConstraints = NO;
-    self.phoneticLabel.hidden = YES;
-    [self.view addSubview:self.phoneticLabel];
+    [self.resultHeader addSubview:self.phoneticLabel];
+
+    self.sourceLabel = [UILabel new];
+    self.sourceLabel.font = [UIFont systemFontOfSize:10.5 weight:UIFontWeightSemibold];
+    self.sourceLabel.textColor = UIColor.tertiaryLabelColor;
+    self.sourceLabel.translatesAutoresizingMaskIntoConstraints = NO;
+    [self.resultHeader addSubview:self.sourceLabel];
 
     self.playButton = [UIButton buttonWithType:UIButtonTypeSystem];
-    [self.playButton setImage:htSymbol(@"speaker.wave.2.fill", @"speaker.2.fill") forState:UIControlStateNormal];
+    [self.playButton setImage:htSymbolSized(@"speaker.wave.2.fill", @"speaker.2.fill", 22, UIImageSymbolWeightRegular) forState:UIControlStateNormal];
     [self.playButton addTarget:self action:@selector(playAudio) forControlEvents:UIControlEventTouchUpInside];
     self.playButton.translatesAutoresizingMaskIntoConstraints = NO;
     self.playButton.hidden = YES;
-    [self.view addSubview:self.playButton];
+    [self.resultHeader addSubview:self.playButton];
+
+    [NSLayoutConstraint activateConstraints:@[
+        [self.headwordLabel.topAnchor constraintEqualToAnchor:self.resultHeader.topAnchor constant:10],
+        [self.headwordLabel.trailingAnchor constraintEqualToAnchor:self.resultHeader.trailingAnchor constant:-14],
+        [self.sourceLabel.topAnchor constraintEqualToAnchor:self.headwordLabel.topAnchor constant:3],
+        [self.sourceLabel.leadingAnchor constraintEqualToAnchor:self.resultHeader.leadingAnchor constant:14],
+        [self.phoneticLabel.topAnchor constraintEqualToAnchor:self.headwordLabel.bottomAnchor constant:2],
+        [self.phoneticLabel.trailingAnchor constraintEqualToAnchor:self.resultHeader.trailingAnchor constant:-14],
+        [self.phoneticLabel.bottomAnchor constraintEqualToAnchor:self.resultHeader.bottomAnchor constant:-10],
+        [self.playButton.centerYAnchor constraintEqualToAnchor:self.resultHeader.centerYAnchor],
+        [self.playButton.leadingAnchor constraintEqualToAnchor:self.resultHeader.leadingAnchor constant:10],
+        [self.playButton.widthAnchor constraintEqualToConstant:34],
+        [self.playButton.heightAnchor constraintEqualToConstant:34],
+        [self.phoneticLabel.leadingAnchor constraintGreaterThanOrEqualToAnchor:self.playButton.trailingAnchor constant:8],
+    ]];
 
     self.recentStack = [UIStackView new];
     self.recentStack.axis = UILayoutConstraintAxisHorizontal;
@@ -164,6 +216,7 @@ static NSString *htDictPosArabic(NSString *pos) {
     self.table.translatesAutoresizingMaskIntoConstraints = NO;
     self.table.rowHeight = UITableViewAutomaticDimension;
     self.table.estimatedRowHeight = 70;
+    self.table.keyboardDismissMode = UIScrollViewKeyboardDismissModeOnDrag;
     [self.table registerClass:[HTDictDefCell class] forCellReuseIdentifier:@"c"];
     [self.view addSubview:self.table];
 
@@ -174,14 +227,11 @@ static NSString *htDictPosArabic(NSString *pos) {
         [self.field.trailingAnchor constraintEqualToAnchor:safe.trailingAnchor constant:-16],
         [self.field.heightAnchor constraintEqualToConstant:40],
 
-        [self.phoneticLabel.topAnchor constraintEqualToAnchor:self.field.bottomAnchor constant:6],
-        [self.phoneticLabel.trailingAnchor constraintEqualToAnchor:safe.trailingAnchor constant:-16],
-        [self.phoneticLabel.leadingAnchor constraintGreaterThanOrEqualToAnchor:safe.leadingAnchor constant:52],
-        [self.playButton.centerYAnchor constraintEqualToAnchor:self.phoneticLabel.centerYAnchor],
-        [self.playButton.trailingAnchor constraintEqualToAnchor:self.phoneticLabel.leadingAnchor constant:-6],
-        [self.playButton.leadingAnchor constraintEqualToAnchor:safe.leadingAnchor constant:16],
+        [self.resultHeader.topAnchor constraintEqualToAnchor:self.field.bottomAnchor constant:10],
+        [self.resultHeader.leadingAnchor constraintEqualToAnchor:safe.leadingAnchor constant:16],
+        [self.resultHeader.trailingAnchor constraintEqualToAnchor:safe.trailingAnchor constant:-16],
 
-        [self.recentScroll.topAnchor constraintEqualToAnchor:self.phoneticLabel.bottomAnchor constant:8],
+        [self.recentScroll.topAnchor constraintEqualToAnchor:self.resultHeader.bottomAnchor constant:8],
         [self.recentScroll.leadingAnchor constraintEqualToAnchor:safe.leadingAnchor constant:16],
         [self.recentScroll.trailingAnchor constraintEqualToAnchor:safe.trailingAnchor constant:-16],
         [self.recentScroll.heightAnchor constraintEqualToConstant:34],
@@ -199,10 +249,31 @@ static NSString *htDictPosArabic(NSString *pos) {
         [self.table.bottomAnchor constraintEqualToAnchor:self.view.bottomAnchor],
     ]];
     [self reloadRecentChips];
+    [self setEmptyState:@"ابحث عن أي كلمة إنجليزية"];
     [self.field becomeFirstResponder];
 }
 - (void)close { [self dismissViewControllerAnimated:YES completion:nil]; }
 - (BOOL)textFieldShouldReturn:(UITextField *)tf { [tf resignFirstResponder]; [self search:tf.text]; return YES; }
+
+- (void)openSettings {
+    NSString *current = [NSUserDefaults.standardUserDefaults stringForKey:HT_DICT_MW_KEY] ?: @"";
+    UIAlertController *a = [UIAlertController alertControllerWithTitle:@"مفتاح Merriam-Webster"
+        message:@"القاموس يشتغل بدون مفتاح (مصدر مجاني بسيط)، بس مفتاح Merriam-Webster المجاني يعطيك تعريفات أدق وصوت حقيقي واقتراحات تصحيح. احصل عليه من dictionaryapi.com (مجاني، Collegiate Dictionary) والصقه هنا."
+        preferredStyle:UIAlertControllerStyleAlert];
+    [a addTextFieldWithConfigurationHandler:^(UITextField *tf) {
+        tf.text = current; tf.placeholder = @"API key"; tf.autocorrectionType = UITextAutocorrectionTypeNo; tf.autocapitalizationType = UITextAutocapitalizationTypeNone;
+    }];
+    [a addAction:[UIAlertAction actionWithTitle:@"فتح صفحة التسجيل" style:UIAlertActionStyleDefault handler:^(UIAlertAction *act) {
+        [UIApplication.sharedApplication openURL:[NSURL URLWithString:@"https://dictionaryapi.com/register/index"] options:@{} completionHandler:nil];
+    }]];
+    [a addAction:[UIAlertAction actionWithTitle:@"حفظ" style:UIAlertActionStyleDefault handler:^(UIAlertAction *act) {
+        NSString *key = [a.textFields.firstObject.text stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+        [NSUserDefaults.standardUserDefaults setObject:key forKey:HT_DICT_MW_KEY];
+        igdToast(key.length ? @"تم حفظ المفتاح" : @"رجعت للقاموس المجاني");
+    }]];
+    [a addAction:[UIAlertAction actionWithTitle:@"إلغاء" style:UIAlertActionStyleCancel handler:nil]];
+    [self presentViewController:a animated:YES completion:nil];
+}
 
 - (void)reloadRecentChips {
     for (UIView *v in self.recentStack.arrangedSubviews.copy) {
@@ -237,24 +308,21 @@ static NSString *htDictPosArabic(NSString *pos) {
     if ([urlStr hasPrefix:@"//"]) urlStr = [@"https:" stringByAppendingString:urlStr];
     NSURL *url = [NSURL URLWithString:urlStr];
     if (!url) return;
-    self.player = [AVPlayer playerWithURL:url];
-    [self.player play];
+    AVPlayer *player = [AVPlayer playerWithURL:url];
+    objc_setAssociatedObject(self, @selector(playAudio), player, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    [player play];
 }
 
 - (void)setEmptyState:(NSString *)msg {
-    self.emptyMessage = msg;
-    if (msg) {
-        UILabel *l = [UILabel new];
-        l.text = msg;
-        l.textColor = UIColor.secondaryLabelColor;
-        l.font = [UIFont systemFontOfSize:15];
-        l.textAlignment = NSTextAlignmentCenter;
-        l.numberOfLines = 0;
-        l.frame = CGRectMake(0, 0, self.table.bounds.size.width - 40, 60);
-        self.table.backgroundView = l;
-    } else {
-        self.table.backgroundView = nil;
-    }
+    if (!msg) { self.table.backgroundView = nil; return; }
+    UILabel *l = [UILabel new];
+    l.text = msg;
+    l.textColor = UIColor.secondaryLabelColor;
+    l.font = [UIFont systemFontOfSize:15];
+    l.textAlignment = NSTextAlignmentCenter;
+    l.numberOfLines = 0;
+    l.frame = CGRectMake(0, 0, self.table.bounds.size.width - 40, 60);
+    self.table.backgroundView = l;
 }
 
 - (void)search:(NSString *)word {
@@ -262,28 +330,127 @@ static NSString *htDictPosArabic(NSString *pos) {
     if (!word.length) return;
     self.requestGen++;
     NSInteger myGen = self.requestGen;
-    self.groups = @[];
-    self.phoneticLabel.hidden = YES;
+    self.groups = @[]; self.suggestions = @[];
+    self.resultHeader.hidden = YES;
     self.playButton.hidden = YES;
     self.pendingAudioURL = nil;
     [self setEmptyState:nil];
     [self.table reloadData];
     [self.spinner startAnimating];
+    NSString *mwKey = [NSUserDefaults.standardUserDefaults stringForKey:HT_DICT_MW_KEY];
+    if (mwKey.length) [self searchMW:word key:mwKey gen:myGen];
+    else [self searchFree:word gen:myGen];
+}
+
+// ---- Merriam-Webster path ---------------------------------------------------------------------
+- (void)searchMW:(NSString *)word key:(NSString *)key gen:(NSInteger)gen {
     NSString *esc = [word stringByAddingPercentEncodingWithAllowedCharacters:NSCharacterSet.URLPathAllowedCharacterSet];
-    NSURL *url = [NSURL URLWithString:[NSString stringWithFormat:@"https://api.dictionaryapi.dev/api/v2/entries/en/%@", esc]];
-    if (!url) { [self.spinner stopAnimating]; return; }
+    NSString *keyEsc = [key stringByAddingPercentEncodingWithAllowedCharacters:NSCharacterSet.URLQueryAllowedCharacterSet];
+    NSURL *url = [NSURL URLWithString:[NSString stringWithFormat:@"https://www.dictionaryapi.com/api/v3/references/collegiate/json/%@?key=%@", esc, keyEsc]];
+    if (!url) { [self searchFree:word gen:gen]; return; }
     NSURLSessionDataTask *t = [NSURLSession.sharedSession dataTaskWithURL:url completionHandler:^(NSData *data, NSURLResponse *resp, NSError *err) {
         dispatch_async(dispatch_get_main_queue(), ^{
-            if (myGen != self.requestGen) return;
-            [self.spinner stopAnimating];
-            if (err || !data) { [self setEmptyState:@"تعذر الاتصال — تأكد من الإنترنت."]; [self.table reloadData]; return; }
-            NSArray *json = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
-            if (![json isKindOfClass:[NSArray class]] || !json.count) {
-                [self setEmptyState:[NSString stringWithFormat:@"ما لقيت \"%@\"", word]];
+            if (gen != self.requestGen) return;
+            if (err || !data) { [self searchFree:word gen:gen]; return; }
+            id json = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
+            if (![json isKindOfClass:[NSArray class]] || ![(NSArray *)json count]) {
+                // empty array = genuinely not found even as a suggestion; anything else (dict, nil) = bad/invalid key
+                if ([json isKindOfClass:[NSArray class]]) { [self finishNotFound:word]; return; }
+                igdToast(@"مفتاح Merriam-Webster غير صالح — رجعت للقاموس المجاني");
+                [self searchFree:word gen:gen];
+                return;
+            }
+            NSArray *arr = (NSArray *)json;
+            if ([arr.firstObject isKindOfClass:[NSString class]]) {
+                // MW returns plain strings instead of entries when the word isn't found: spelling suggestions
+                self.suggestions = arr;
+                [self setEmptyState:[NSString stringWithFormat:@"ما لقيت \"%@\" — جرب إحدى هذي:", word]];
                 self.recentScroll.hidden = YES;
+                [self showSuggestionChips];
+                [self.spinner stopAnimating];
                 [self.table reloadData];
                 return;
             }
+            [self renderMWEntries:arr word:word];
+        });
+    }];
+    [t resume];
+}
+- (void)showSuggestionChips {
+    for (UIView *v in self.recentStack.arrangedSubviews.copy) { [self.recentStack removeArrangedSubview:v]; [v removeFromSuperview]; }
+    self.recentScroll.hidden = !self.suggestions.count;
+    NSInteger i = 0;
+    for (NSString *w in self.suggestions) {
+        UIButton *chip = [UIButton buttonWithType:UIButtonTypeSystem];
+        [chip setTitle:w forState:UIControlStateNormal];
+        [chip setTitleColor:UIColor.whiteColor forState:UIControlStateNormal];
+        chip.titleLabel.font = [UIFont systemFontOfSize:13 weight:UIFontWeightMedium];
+        chip.backgroundColor = [UIColor colorWithRed:0.42 green:0.45 blue:0.98 alpha:1];
+        chip.layer.cornerRadius = 15;
+        chip.contentEdgeInsets = UIEdgeInsetsMake(6, 14, 6, 14);
+        chip.tag = i++;
+        [chip addTarget:self action:@selector(suggestionChipTapped:) forControlEvents:UIControlEventTouchUpInside];
+        [self.recentStack addArrangedSubview:chip];
+    }
+}
+- (void)suggestionChipTapped:(UIButton *)sender {
+    NSString *w = self.suggestions[sender.tag];
+    self.field.text = w;
+    [self search:w];
+}
+- (void)renderMWEntries:(NSArray *)entries word:(NSString *)word {
+    NSDictionary *first = entries.firstObject;
+    NSDictionary *hwi = first[@"hwi"];
+    NSString *hw = [hwi[@"hw"] stringByReplacingOccurrencesOfString:@"*" withString:@"·"];
+    self.headwordLabel.text = hw.length ? hw : word;
+    self.sourceLabel.text = @"MERRIAM-WEBSTER";
+    NSArray *prs = hwi[@"prs"];
+    NSString *phonetic = nil, *audio = nil;
+    for (NSDictionary *pr in prs) {
+        if (!phonetic.length && [pr[@"mw"] length]) phonetic = [NSString stringWithFormat:@"/%@/", pr[@"mw"]];
+        if (!audio.length && [pr[@"sound"][@"audio"] length]) audio = htMWAudioURL(pr[@"sound"][@"audio"]);
+    }
+    self.phoneticLabel.text = phonetic ?: @"";
+    self.phoneticLabel.hidden = !phonetic.length;
+    if (audio.length) { self.pendingAudioURL = audio; self.playButton.hidden = NO; }
+    self.resultHeader.hidden = NO;
+
+    NSMutableOrderedSet<NSString *> *posOrder = [NSMutableOrderedSet new];
+    NSMutableDictionary<NSString *, NSMutableArray *> *byPos = [NSMutableDictionary new];
+    for (NSDictionary *entry in entries) {
+        NSString *pos = entry[@"fl"] ?: @"";
+        NSArray *shortdefs = entry[@"shortdef"];
+        if (!shortdefs.count) continue;
+        [posOrder addObject:pos];
+        NSMutableArray *rows = byPos[pos] ?: [NSMutableArray new];
+        for (NSString *def in shortdefs) [rows addObject:@{@"definition": def, @"example": @"", @"synonyms": @[]}];
+        byPos[pos] = rows;
+    }
+    NSMutableArray *groups = [NSMutableArray new];
+    for (NSString *pos in posOrder) [groups addObject:@{@"pos": pos, @"rows": byPos[pos]}];
+    self.groups = groups;
+    [self setEmptyState:groups.count ? nil : @"ما فيه تعريف متوفر."];
+    [self.spinner stopAnimating];
+    [self.table reloadData];
+    htDictRemember(word);
+    [self reloadRecentChips];
+}
+
+// ---- free fallback (no key needed) -------------------------------------------------------------
+- (void)searchFree:(NSString *)word gen:(NSInteger)gen {
+    NSString *esc = [word stringByAddingPercentEncodingWithAllowedCharacters:NSCharacterSet.URLPathAllowedCharacterSet];
+    NSURL *url = [NSURL URLWithString:[NSString stringWithFormat:@"https://api.dictionaryapi.dev/api/v2/entries/en/%@", esc]];
+    if (!url) { [self.spinner stopAnimating]; [self setEmptyState:@"تعذر تكوين الطلب."]; return; }
+    NSURLSessionDataTask *t = [NSURLSession.sharedSession dataTaskWithURL:url completionHandler:^(NSData *data, NSURLResponse *resp, NSError *err) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            if (gen != self.requestGen) return;
+            [self.spinner stopAnimating];
+            if (err || !data) { [self setEmptyState:@"تعذر الاتصال — تأكد من الإنترنت."]; [self.table reloadData]; return; }
+            NSArray *json = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
+            if (![json isKindOfClass:[NSArray class]] || !json.count) { [self finishNotFound:word]; return; }
+
+            self.headwordLabel.text = word;
+            self.sourceLabel.text = @"FREE DICTIONARY";
             NSString *phonetic = nil, *audio = nil;
             for (NSDictionary *entry in json) {
                 if (!phonetic.length && [entry[@"phonetic"] length]) phonetic = entry[@"phonetic"];
@@ -292,8 +459,10 @@ static NSString *htDictPosArabic(NSString *pos) {
                     if (!audio.length && [ph[@"audio"] length]) audio = ph[@"audio"];
                 }
             }
-            if (phonetic.length) { self.phoneticLabel.text = phonetic; self.phoneticLabel.hidden = NO; }
+            self.phoneticLabel.text = phonetic ?: @"";
+            self.phoneticLabel.hidden = !phonetic.length;
             if (audio.length) { self.pendingAudioURL = audio; self.playButton.hidden = NO; }
+            self.resultHeader.hidden = NO;
 
             NSMutableOrderedSet<NSString *> *posOrder = [NSMutableOrderedSet new];
             NSMutableDictionary<NSString *, NSMutableArray *> *byPos = [NSMutableDictionary new];
@@ -318,6 +487,12 @@ static NSString *htDictPosArabic(NSString *pos) {
         });
     }];
     [t resume];
+}
+- (void)finishNotFound:(NSString *)word {
+    [self.spinner stopAnimating];
+    [self setEmptyState:[NSString stringWithFormat:@"ما لقيت \"%@\"", word]];
+    self.recentScroll.hidden = YES;
+    [self.table reloadData];
 }
 
 - (NSInteger)numberOfSectionsInTableView:(UITableView *)t { return self.groups.count; }
@@ -395,7 +570,7 @@ static void htInstallDictButton(void) {
 }
 
 __attribute__((constructor)) static void init(void) {
-    raRegisterD(@"الإضافات", @"ht.dict", @"القاموس", @"بحث إنجليزي مستقل تماماً عن حساب أو سيرفرات HelloTalk — معاني مبوبة حسب نوع الكلمة، نطق، مرادفات، وآخر الكلمات", YES);
+    raRegisterD(@"الإضافات", @"ht.dict", @"القاموس", @"مستقل تماماً عن حساب أو سيرفرات HelloTalk — يدعم Merriam-Webster (بمفتاح مجاني من إعدادات القاموس) مع رجوع تلقائي لمصدر مجاني بسيط", YES);
     raRegisterD(@"الواجهة", @"ht.dict.btn", @"زر القاموس العائم", @"زر منفصل عن شعار Ra، يفتح القاموس مباشرة بضغطة وحدة. تقدر تسحبه لأي مكان", YES);
     igdRun(@"HTDict", BUILD, ^{
         htInstallDictButton();
