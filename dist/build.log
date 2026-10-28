@@ -7,23 +7,27 @@ OK HTDict
 == HTSave ==
 OK HTSave
 == HTTranslate ==
-OK HTTranslate
+src/HTTranslate.m:663:8: error: no visible @interface for 'UIAlertController' declares the selector 'addTextField:'
+  663 |     [a addTextField:^(UITextField *tf) { tf.placeholder = @"..."; }];
+      |      ~ ^~~~~~~~~~~~
+1 error generated.
 == HTOnline ==
 OK HTOnline
 == HTSeen ==
 OK HTSeen
 == FocusMode (all-in-one) ==
-OK FocusMode
-total 5064
-drwxr-xr-x  12 runner  staff     384 Oct 28 01:15 .
-drwxr-xr-x   8 runner  staff     256 Oct 28 01:15 ..
--rw-r--r--   1 runner  staff     213 Oct 28 01:15 build.log
--rwxr-xr-x   1 runner  staff  455520 Oct 28 01:15 FocusMode.dylib
--rwxr-xr-x   1 runner  staff  286544 Oct 28 01:15 HTAds.dylib
--rwxr-xr-x   1 runner  staff  349664 Oct 28 01:15 HTDict.dylib
--rwxr-xr-x   1 runner  staff  282656 Oct 28 01:15 HTFix.dylib
--rwxr-xr-x   1 runner  staff  288832 Oct 28 01:15 HTOnline.dylib
--rwxr-xr-x   1 runner  staff  288464 Oct 28 01:15 HTSave.dylib
--rwxr-xr-x   1 runner  staff  288096 Oct 28 01:15 HTSeen.dylib
--rwxr-xr-x   1 runner  staff  330048 Oct 28 01:15 HTTranslate.dylib
-drwxr-xr-x  10 runner  staff     320 Oct 28 01:15 obj
+src/HTTranslate.m:663:8: error: no visible @interface for 'UIAlertController' declares the selector 'addTextField:'
+  663 |     [a addTextField:^(UITextField *tf) { tf.placeholder = @"..."; }];
+      |      ~ ^~~~~~~~~~~~
+1 error generated.
+total 3520
+drwxr-xr-x  10 runner  staff     320 Oct 28 01:35 .
+drwxr-xr-x   8 runner  staff     256 Oct 28 01:35 ..
+-rw-r--r--   1 runner  staff     667 Oct 28 01:35 build.log
+-rwxr-xr-x   1 runner  staff  286544 Oct 28 01:35 HTAds.dylib
+-rwxr-xr-x   1 runner  staff  350896 Oct 28 01:35 HTDict.dylib
+-rwxr-xr-x   1 runner  staff  282656 Oct 28 01:35 HTFix.dylib
+-rwxr-xr-x   1 runner  staff  288832 Oct 28 01:35 HTOnline.dylib
+-rwxr-xr-x   1 runner  staff  288464 Oct 28 01:35 HTSave.dylib
+-rwxr-xr-x   1 runner  staff  288096 Oct 28 01:35 HTSeen.dylib
+drwxr-xr-x   6 runner  staff     192 Oct 28 01:35 obj
