@@ -8,9 +8,10 @@
 // "did you mean" suggestions for misspelled words. Falls back automatically to the free
 // dictionaryapi.dev lookup (no key needed) when no key is set or the key/request fails.
 #import "igd_common.h"
+#import "ht_bg.h"
 #import <AVFoundation/AVFoundation.h>
 #import <ctype.h>
-#define BUILD @"dict4"
+#define BUILD @"dict5"
 
 #define HT_DICT_RECENT_KEY @"ht.dict.recent"
 #define HT_DICT_BTN_POS_KEY @"ht.dict.btn.pos"
@@ -64,6 +65,11 @@ static NSString *htMWAudioURL(NSString *audio) {
     self = [super initWithStyle:style reuseIdentifier:rid];
     if (!self) return nil;
     self.selectionStyle = UITableViewCellSelectionStyleNone;
+    // table.backgroundColor is clear (so the background image shows through the gaps between
+    // sections), but each row stays a fully opaque card — a translucent row over a photo risks
+    // unreadable text depending on light/dark mode and what part of the image sits behind it
+    self.backgroundColor = UIColor.secondarySystemBackgroundColor;
+    self.contentView.backgroundColor = UIColor.clearColor;
     self.defLabel = [UILabel new];
     self.defLabel.numberOfLines = 0;
     self.defLabel.font = [UIFont systemFontOfSize:15.5];
@@ -132,6 +138,7 @@ static NSString *htMWAudioURL(NSString *audio) {
 - (void)viewDidLoad {
     [super viewDidLoad];
     self.view.backgroundColor = UIColor.systemBackgroundColor;
+    htApplyBackground(self.view);
     self.title = @"القاموس";
     self.groups = @[];
     self.suggestions = @[];
@@ -246,6 +253,7 @@ static NSString *htMWAudioURL(NSString *audio) {
 
     self.table = [[UITableView alloc] initWithFrame:CGRectZero style:UITableViewStyleInsetGrouped];
     self.table.dataSource = self; self.table.delegate = self;
+    self.table.backgroundColor = UIColor.clearColor;
     self.table.translatesAutoresizingMaskIntoConstraints = NO;
     self.table.rowHeight = UITableViewAutomaticDimension;
     self.table.estimatedRowHeight = 70;

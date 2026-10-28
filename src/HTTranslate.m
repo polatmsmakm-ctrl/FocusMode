@@ -23,10 +23,11 @@
 // swaps the text too, copy button, remembered last-used language pair, friendlier handling of the
 // free API's quota message, and haptic feedback.
 #import "igd_common.h"
+#import "ht_bg.h"
 #import <AVFoundation/AVFoundation.h>
 #import <Vision/Vision.h>
 #import <ImageIO/CGImageProperties.h>
-#define BUILD @"tr3"
+#define BUILD @"tr4"
 
 #define HT_TR_FROM_KEY @"ht.translate.from"
 #define HT_TR_TO_KEY @"ht.translate.to"
@@ -64,26 +65,35 @@ static void htTranslate(NSString *text, NSString *from, NSString *to, HTTranslat
 
 // ---- OCR via Vision (on-device, no network, no extra permission beyond Camera/Photos which ----
 // ---- HelloTalk's Info.plist already declares) ---------------------------------------------------
-static CGImagePropertyOrientation htCGOrientation(UIImageOrientation o) {
-    switch (o) {
-        case UIImageOrientationUp: return kCGImagePropertyOrientationUp;
-        case UIImageOrientationDown: return kCGImagePropertyOrientationDown;
-        case UIImageOrientationLeft: return kCGImagePropertyOrientationLeft;
-        case UIImageOrientationRight: return kCGImagePropertyOrientationRight;
-        case UIImageOrientationUpMirrored: return kCGImagePropertyOrientationUpMirrored;
-        case UIImageOrientationDownMirrored: return kCGImagePropertyOrientationDownMirrored;
-        case UIImageOrientationLeftMirrored: return kCGImagePropertyOrientationLeftMirrored;
-        case UIImageOrientationRightMirrored: return kCGImagePropertyOrientationRightMirrored;
-    }
-    return kCGImagePropertyOrientationUp;
+//
+// A raw photo straight from UIImagePickerController (especially the camera) can be 4000x3000px or
+// bigger — handing that full-size CGImage to Vision inside an already-running host app (HelloTalk,
+// which has its own large memory footprint) can push the process over iOS's memory limit and get
+// it killed by the OS, which looks exactly like a crash. Every image is redrawn at a sane max
+// dimension before OCR ever sees it — this also neatly fixes orientation at the same time, since
+// drawing a UIImage via UIGraphicsImageRenderer always produces an upright image regardless of its
+// original EXIF orientation, so Vision can't misread sideways/upside-down photos.
+static UIImage *htDownscaleUpright(UIImage *image, CGFloat maxDim) {
+    CGSize size = image.size;
+    if (size.width < 1 || size.height < 1) return image;
+    CGFloat scale = MIN(1.0, maxDim / MAX(size.width, size.height));
+    CGSize target = CGSizeMake(MAX(1, size.width * scale), MAX(1, size.height * scale));
+    UIGraphicsImageRendererFormat *fmt = [UIGraphicsImageRendererFormat preferredFormat];
+    fmt.opaque = YES;
+    fmt.scale = 1;   // we already picked the pixel size we want — don't multiply by screen scale too
+    UIGraphicsImageRenderer *renderer = [[UIGraphicsImageRenderer alloc] initWithSize:target format:fmt];
+    return [renderer imageWithActions:^(UIGraphicsImageRendererContext *ctx) {
+        [image drawInRect:CGRectMake(0, 0, target.width, target.height)];
+    }];
 }
 typedef void (^HTOcrReply)(NSString *text);
 static void htRecognizeText(UIImage *image, HTOcrReply reply) {
-    CGImageRef cg = image.CGImage;
-    if (!cg) { dispatch_async(dispatch_get_main_queue(), ^{ reply(nil); }); return; }
-    CGImagePropertyOrientation orient = htCGOrientation(image.imageOrientation);
+    if (!image) { dispatch_async(dispatch_get_main_queue(), ^{ reply(nil); }); return; }
     dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
-        VNImageRequestHandler *handler = [[VNImageRequestHandler alloc] initWithCGImage:cg orientation:orient options:@{}];
+        UIImage *safe = htDownscaleUpright(image, 1600);   // plenty of resolution for OCR, far less memory
+        CGImageRef cg = safe.CGImage;
+        if (!cg) { dispatch_async(dispatch_get_main_queue(), ^{ reply(nil); }); return; }
+        VNImageRequestHandler *handler = [[VNImageRequestHandler alloc] initWithCGImage:cg orientation:kCGImagePropertyOrientationUp options:@{}];
         VNRecognizeTextRequest *req = [[VNRecognizeTextRequest alloc] initWithCompletionHandler:^(VNRequest *request, NSError *error) {
             if (error) { dispatch_async(dispatch_get_main_queue(), ^{ reply(nil); }); return; }
             NSMutableArray *lines = [NSMutableArray new];
@@ -126,6 +136,7 @@ static void htRecognizeText(UIImage *image, HTOcrReply reply) {
 @property (nonatomic, strong) UITextView *input;
 @property (nonatomic, strong) UILabel *placeholder;
 @property (nonatomic, strong) UILabel *charCount;
+@property (nonatomic, strong) UILabel *dictHint;
 @property (nonatomic, strong) UILabel *output;
 @property (nonatomic, strong) UIActivityIndicatorView *spinner;
 @property (nonatomic, strong) UIButton *fromBtn, *toBtn, *speakBtn, *clipboardBtn, *goBtn;
@@ -142,6 +153,7 @@ static void htRecognizeText(UIImage *image, HTOcrReply reply) {
 - (void)viewDidLoad {
     [super viewDidLoad];
     self.view.backgroundColor = UIColor.systemBackgroundColor;
+    htApplyBackground(self.view);
     self.title = @"ترجمة";
     NSInteger savedFrom = [NSUserDefaults.standardUserDefaults integerForKey:HT_TR_FROM_KEY];
     NSInteger savedTo = [NSUserDefaults.standardUserDefaults integerForKey:HT_TR_TO_KEY];
@@ -204,6 +216,16 @@ static void htRecognizeText(UIImage *image, HTOcrReply reply) {
     self.charCount.textColor = UIColor.tertiaryLabelColor;
     self.charCount.translatesAutoresizingMaskIntoConstraints = NO;
     [self.view addSubview:self.charCount];
+
+    // always-visible reminder that dictation works through the keyboard's own mic — not just a
+    // toast that can be missed, since "استماع" itself is just this same tip + focusing the field
+    self.dictHint = [UILabel new];
+    self.dictHint.text = @"💡 تقدر تنطق بدل الكتابة — اضغط 🎤 بلوحة المفاتيح";
+    self.dictHint.font = [UIFont systemFontOfSize:11];
+    self.dictHint.textColor = UIColor.tertiaryLabelColor;
+    self.dictHint.numberOfLines = 1;
+    self.dictHint.translatesAutoresizingMaskIntoConstraints = NO;
+    [self.view addSubview:self.dictHint];
 
     self.fromBtn = [self langButton];
     self.toBtn = [self langButton];
@@ -305,6 +327,10 @@ static void htRecognizeText(UIImage *image, HTOcrReply reply) {
 
         [self.charCount.topAnchor constraintEqualToAnchor:self.input.bottomAnchor constant:3],
         [self.charCount.trailingAnchor constraintEqualToAnchor:self.input.trailingAnchor constant:-4],
+
+        [self.dictHint.centerYAnchor constraintEqualToAnchor:self.charCount.centerYAnchor],
+        [self.dictHint.leadingAnchor constraintEqualToAnchor:self.input.leadingAnchor constant:4],
+        [self.dictHint.trailingAnchor constraintLessThanOrEqualToAnchor:self.charCount.leadingAnchor constant:-8],
 
         [self.goBtn.topAnchor constraintEqualToAnchor:self.charCount.bottomAnchor constant:10],
         [self.goBtn.centerXAnchor constraintEqualToAnchor:self.view.centerXAnchor],
@@ -412,6 +438,7 @@ static void htRecognizeText(UIImage *image, HTOcrReply reply) {
     [self presentPickerSource:UIImagePickerControllerSourceTypeCamera];
 }
 - (void)presentPickerSource:(UIImagePickerControllerSourceType)src {
+    if (self.presentedViewController) return;   // avoid "present while a presentation is in progress" from a double tap
     UIImagePickerController *p = [UIImagePickerController new];
     p.sourceType = src;
     p.delegate = self;
@@ -437,6 +464,12 @@ static void htRecognizeText(UIImage *image, HTOcrReply reply) {
 - (void)openDictation {
     [self.input becomeFirstResponder];
     igdToast(@"اضغط أيقونة المايك 🎤 بلوحة المفاتيح وابدأ الكلام");
+    // visible pulse on the input box itself so something is obviously different, not just a keyboard
+    self.input.layer.borderWidth = 2;
+    self.input.layer.borderColor = [UIColor colorWithRed:0.42 green:0.45 blue:0.98 alpha:1].CGColor;
+    [UIView animateWithDuration:0.6 delay:0.3 options:0 animations:^{
+        self.input.layer.borderColor = UIColor.clearColor.CGColor;
+    } completion:nil];
 }
 - (void)openConversation {
     HTConversationVC *vc = [HTConversationVC new];
@@ -602,6 +635,7 @@ static void htRecognizeText(UIImage *image, HTOcrReply reply) {
 - (void)viewDidLoad {
     [super viewDidLoad];
     self.view.backgroundColor = UIColor.systemBackgroundColor;
+    htApplyBackground(self.view);
     self.title = @"محادثة";
     self.tts = [AVSpeechSynthesizer new];
     self.navigationItem.rightBarButtonItem = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemDone target:self action:@selector(close)];
