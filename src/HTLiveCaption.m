@@ -1,16 +1,43 @@
 // HTLiveCaption: real-time captions — whatever the person near you (or in a call) says gets
-// picked up through iOS's own system-keyboard dictation (tap the 🎤 on the keyboard) and shown,
-// translated, as big scrolling captions right on screen. Fully standalone — no hook into
-// HelloTalk's own call/chat classes at all, and (like HTTranslate's "استماع") deliberately does
-// NOT use SFSpeechRecognizer directly: HelloTalk's Info.plist has no NSSpeechRecognitionUsageDescription
-// key, and a dylib injected after the app is built cannot add one, so calling that API directly
-// would crash instantly at the OS permission-check level. Going through the system keyboard's own
-// dictation button sidesteps that entirely — it's a separate OS-level path needing no permission
-// declaration from this app. "🎙️ ترجمة فورية" in Ra Menu's footer.
+// shown, translated, as big scrolling captions right on screen. Two paths, chosen automatically:
+//
+// 1) EASY (one tap, continuous, no keyboard): SFSpeechRecognizer + AVAudioEngine. This needs
+//    HelloTalk's Info.plist to have an NSSpeechRecognitionUsageDescription key — without it, iOS
+//    terminates the app instantly the moment the permission is requested, with no way to catch it.
+//    HelloTalk's shipped Info.plist does NOT have that key, and a dylib injected after the app is
+//    already built cannot add one — so we check for the key ourselves at runtime
+//    (htSpeechKeyPresent) and NEVER call the Speech API unless it's actually there. If the user
+//    adds that one key to the .app's Info.plist themselves (same moment they inject this dylib —
+//    full instructions are in the toast this file shows when the key is missing) and re-signs as
+//    usual, this path turns on automatically, with no code change needed on our side.
+// 2) FALLBACK (manual, one tap per sentence): the old trick — focus a hidden text field so the
+//    system keyboard's own dictation mic button appears, which is a separate OS-level permission
+//    path that needs no Info.plist entry at all. Used automatically whenever path 1 isn't
+//    available (key missing, permission denied, or the audio engine fails to start).
+//
+// "🎙️ ترجمة فورية" in Ra Menu's footer.
 #import "igd_common.h"
-#define BUILD @"livecaption2"
+#import <Speech/Speech.h>
+#import <AVFoundation/AVFoundation.h>
+#define BUILD @"livecaption3"
 #define HT_LC_FROM_KEY @"ht.livecaption.from"
 #define HT_LC_TO_KEY @"ht.livecaption.to"
+#define HT_LC_SPEECH_KEY_NAME @"NSSpeechRecognitionUsageDescription"
+
+// true only if HelloTalk's Info.plist (as it exists on THIS install, after whatever the user did
+// when injecting the dylib) actually carries the usage-description key Apple requires before any
+// SFSpeechRecognizer call is safe to make
+static BOOL htSpeechKeyPresent(void) {
+    return [NSBundle.mainBundle objectForInfoDictionaryKey:HT_LC_SPEECH_KEY_NAME] != nil;
+}
+
+static NSString *htLocaleForLangCode(NSString *code) {
+    NSDictionary *map = @{
+        @"en": @"en-US", @"ar": @"ar-SA", @"es": @"es-ES", @"fr": @"fr-FR", @"de": @"de-DE", @"tr": @"tr-TR",
+        @"ja": @"ja-JP", @"ko": @"ko-KR", @"zh-CN": @"zh-CN", @"ru": @"ru-RU", @"pt": @"pt-PT", @"it": @"it-IT",
+    };
+    return map[code] ?: @"en-US";
+}
 
 static NSArray<NSArray<NSString *> *> *htLCLangs(void) {
     static NSArray *langs;
@@ -60,6 +87,15 @@ static void htLCTranslate(NSString *text, NSString *from, NSString *to, HTLCRepl
 @property (nonatomic, strong) NSTimer *idleTimer;
 @property (nonatomic) NSTimeInterval lastChangeTime;
 @property (nonatomic, strong) NSTimer *debounce;
+// easy-path (SFSpeechRecognizer) state
+@property (nonatomic, strong) UIButton *micButton;
+@property (nonatomic) BOOL easyMode;      // becomes YES once the easy path is actually confirmed working
+@property (nonatomic) BOOL listening;
+@property (nonatomic, strong) SFSpeechRecognizer *recognizer;
+@property (nonatomic, strong) AVAudioEngine *audioEngine;
+@property (nonatomic, strong) SFSpeechAudioBufferRecognitionRequest *speechRequest;
+@property (nonatomic, strong) SFSpeechRecognitionTask *speechTask;
+@property (nonatomic, copy) NSString *lastPartial;
 @end
 @implementation HTLiveCaptionVC
 - (void)viewDidLoad {
@@ -92,8 +128,18 @@ static void htLCTranslate(NSString *text, NSString *from, NSString *to, HTLCRepl
     langRow.translatesAutoresizingMaskIntoConstraints = NO;
     [self.view addSubview:langRow];
 
+    self.micButton = [UIButton buttonWithType:UIButtonTypeCustom];
+    self.micButton.bounds = CGRectMake(0, 0, 64, 64);
+    self.micButton.layer.cornerRadius = 32;
+    self.micButton.backgroundColor = [UIColor colorWithRed:0.52 green:0.33 blue:0.92 alpha:0.96];
+    [self.micButton setImage:htSymbolSized(@"mic.fill", @"mic", 26, UIImageSymbolWeightSemibold) forState:UIControlStateNormal];
+    self.micButton.tintColor = UIColor.whiteColor;
+    self.micButton.translatesAutoresizingMaskIntoConstraints = NO;
+    [self.micButton addTarget:self action:@selector(micTapped) forControlEvents:UIControlEventTouchUpInside];
+    [self.view addSubview:self.micButton];
+
     self.instruction = [UILabel new];
-    self.instruction.text = @"🎤 اضغط زر الديكتيشن بلوحة المفاتيح وابدأ — الكلام يترجم ويظهر هنا تلقائياً";
+    self.instruction.text = @"🎤 اضغط الزر وابدأ الكلام — يترجم ويظهر هنا تلقائياً";
     self.instruction.font = [UIFont systemFontOfSize:14 weight:UIFontWeightMedium];
     self.instruction.textColor = [UIColor colorWithWhite:1 alpha:0.6];
     self.instruction.numberOfLines = 0;
@@ -133,7 +179,10 @@ static void htLCTranslate(NSString *text, NSString *from, NSString *to, HTLCRepl
         [langRow.topAnchor constraintEqualToAnchor:safe.topAnchor constant:10],
         [langRow.centerXAnchor constraintEqualToAnchor:self.view.centerXAnchor],
 
-        [self.instruction.topAnchor constraintEqualToAnchor:langRow.bottomAnchor constant:14],
+        [self.micButton.topAnchor constraintEqualToAnchor:langRow.bottomAnchor constant:16],
+        [self.micButton.centerXAnchor constraintEqualToAnchor:self.view.centerXAnchor],
+
+        [self.instruction.topAnchor constraintEqualToAnchor:self.micButton.bottomAnchor constant:10],
         [self.instruction.leadingAnchor constraintEqualToAnchor:safe.leadingAnchor constant:28],
         [self.instruction.trailingAnchor constraintEqualToAnchor:safe.trailingAnchor constant:-28],
 
@@ -191,15 +240,146 @@ static void htLCTranslate(NSString *text, NSString *from, NSString *to, HTLCRepl
 }
 - (void)viewDidAppear:(BOOL)animated {
     [super viewDidAppear:animated];
-    [self.hiddenInput becomeFirstResponder];
+    // nothing auto-starts here on purpose — starting the mic (even the easy path) should always be
+    // a deliberate tap, never silent/automatic listening
 }
 - (void)close {
     [self.idleTimer invalidate];
     [self.debounce invalidate];
+    [self stopListening];
     [self.hiddenInput resignFirstResponder];
     UIWindow *w = self.view.window;
     w.hidden = YES;
     w.rootViewController = nil;
+}
+- (void)micTapped {
+    if (self.listening) { [self stopListening]; return; }
+    if (!htSpeechKeyPresent()) {
+        NSString *key = [NSString stringWithFormat:@"%@.%@", @"ht.livecaption.easyhint", NSBundle.mainBundle.bundleIdentifier ?: @""];
+        if (![NSUserDefaults.standardUserDefaults boolForKey:key]) {
+            [NSUserDefaults.standardUserDefaults setBool:YES forKey:key];
+            igdToast(@"لتفعيل الاستماع المستمر بضغطة وحدة: ضيف مفتاح NSSpeechRecognitionUsageDescription بملف Info.plist حق HelloTalk (نفس وقت ما تحط الدايلب) — بدونه نستخدم طريقة لوحة المفاتيح اليدوية");
+        }
+        [self startFallbackListening];
+        return;
+    }
+    [self startEasyListening];
+}
+// ---- EASY path: SFSpeechRecognizer + AVAudioEngine, continuous, one tap to start/stop ----------
+- (void)startEasyListening {
+    [SFSpeechRecognizer requestAuthorization:^(SFSpeechRecognizerAuthorizationStatus status) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            if (status != SFSpeechRecognizerAuthorizationStatusAuthorized) {
+                igdToast(@"ما قدرنا نفعّل صلاحية التعرف على الصوت — رجعنا للطريقة اليدوية (🎤 بلوحة المفاتيح)");
+                [self startFallbackListening];
+                return;
+            }
+            // AVAudioSession's own permission request (not AVAudioApplication, which needs iOS 17+
+            // and this app targets 15+) — fully supported back to iOS 15
+            [AVAudioSession.sharedInstance requestRecordPermission:^(BOOL granted) {
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    if (!granted) { [self startFallbackListening]; return; }
+                    [self beginEasyAudioSession];
+                });
+            }];
+        });
+    }];
+}
+- (void)beginEasyAudioSession {
+    NSArray *langs = htLCLangs();
+    NSString *locale = htLocaleForLangCode(langs[self.fromIdx][0]);
+    self.recognizer = [[SFSpeechRecognizer alloc] initWithLocale:[NSLocale localeWithLocaleIdentifier:locale]];
+    if (!self.recognizer.isAvailable) {
+        igdToast(@"التعرف على الصوت لهالغة مو متوفر بجهازك — رجعنا للطريقة اليدوية");
+        [self startFallbackListening];
+        return;
+    }
+    AVAudioSession *session = AVAudioSession.sharedInstance;
+    NSError *err = nil;
+    [session setCategory:AVAudioSessionCategoryRecord mode:AVAudioSessionModeMeasurement options:0 error:&err];
+    [session setActive:YES withOptions:AVAudioSessionSetActiveOptionNotifyOthersOnDeactivation error:&err];
+    if (err) { igdToast(@"تعذر تشغيل المايك — رجعنا للطريقة اليدوية"); [self startFallbackListening]; return; }
+
+    self.audioEngine = [AVAudioEngine new];
+    AVAudioInputNode *input = self.audioEngine.inputNode;
+    AVAudioFormat *fmt = [input outputFormatForBus:0];
+    [input removeTapOnBus:0];
+    __weak typeof(self) weakSelf = self;
+    [input installTapOnBus:0 bufferSize:1024 format:fmt block:^(AVAudioPCMBuffer *buf, AVAudioTime *when) {
+        [weakSelf.speechRequest appendAudioPCMBuffer:buf];
+    }];
+    [self.audioEngine prepare];
+    if (![self.audioEngine startAndReturnError:&err] || err) {
+        igdToast(@"تعذر تشغيل المايك — رجعنا للطريقة اليدوية");
+        [input removeTapOnBus:0];
+        [self startFallbackListening];
+        return;
+    }
+    self.listening = YES;
+    self.easyMode = YES;
+    [self updateMicUI];
+    [self startOneSpeechTask];
+}
+// Apple's recognition task auto-ends after a stretch of silence/final result — this restarts a
+// fresh one immediately for as long as the person has listening turned on, so it feels continuous
+- (void)startOneSpeechTask {
+    if (!self.listening) return;
+    self.speechRequest = [SFSpeechAudioBufferRecognitionRequest new];
+    self.speechRequest.shouldReportPartialResults = YES;
+    __weak typeof(self) weakSelf = self;
+    self.speechTask = [self.recognizer recognitionTaskWithRequest:self.speechRequest resultHandler:^(SFSpeechRecognitionResult *result, NSError *error) {
+        typeof(self) strongSelf = weakSelf;
+        if (!strongSelf || !strongSelf.listening) return;
+        if (result) {
+            NSString *text = result.bestTranscription.formattedString;
+            strongSelf.lastPartial = text;
+            [strongSelf translateLive:text];
+            if (result.isFinal && text.length) {
+                [strongSelf commitCaption:text];
+                dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.05 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                    [strongSelf startOneSpeechTask];
+                });
+            }
+        }
+        if (error) {
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.3 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                if (strongSelf.listening) [strongSelf startOneSpeechTask];
+            });
+        }
+    }];
+}
+// ---- FALLBACK path: the old system-keyboard dictation trick ------------------------------------
+- (void)startFallbackListening {
+    self.easyMode = NO;
+    self.listening = YES;
+    [self updateMicUI];
+    [self.hiddenInput becomeFirstResponder];
+    // self.idleTimer (started once in viewDidLoad) already polls for committed fallback-dictation text
+}
+- (void)stopListening {
+    if (!self.listening && !self.easyMode) return;
+    self.listening = NO;
+    [self.speechTask cancel];
+    self.speechTask = nil;
+    [self.speechRequest endAudio];
+    self.speechRequest = nil;
+    if (self.audioEngine.isRunning) {
+        [self.audioEngine stop];
+        [self.audioEngine.inputNode removeTapOnBus:0];
+    }
+    self.audioEngine = nil;
+    [AVAudioSession.sharedInstance setActive:NO withOptions:AVAudioSessionSetActiveOptionNotifyOthersOnDeactivation error:nil];
+    [self.hiddenInput resignFirstResponder];
+    [self updateMicUI];
+}
+- (void)updateMicUI {
+    [self.micButton setImage:htSymbolSized(self.listening ? @"stop.fill" : @"mic.fill", self.listening ? @"stop.fill" : @"mic", 26, UIImageSymbolWeightSemibold) forState:UIControlStateNormal];
+    self.micButton.backgroundColor = self.listening ? [UIColor colorWithRed:0.92 green:0.28 blue:0.33 alpha:0.96] : [UIColor colorWithRed:0.52 green:0.33 blue:0.92 alpha:0.96];
+    if (self.listening) {
+        self.instruction.text = self.easyMode ? @"🎧 يسمع الآن باستمرار — اضغط الزر الأحمر لين توقف" : @"🎤 اضغط زر الديكتيشن بلوحة المفاتيح وابدأ الكلام";
+    } else {
+        self.instruction.text = htSpeechKeyPresent() ? @"🎤 اضغط الزر وابدأ الكلام — يترجم ويظهر هنا تلقائياً" : @"🎤 اضغط الزر ثم اضغط زر الديكتيشن بلوحة المفاتيح (لتفعيل الاستماع التلقائي المستمر، راجع ملاحظة Info.plist بتفاصيل المشروع)";
+    }
 }
 - (void)textViewDidChange:(UITextView *)tv {
     self.lastChangeTime = CFAbsoluteTimeGetCurrent();
@@ -217,6 +397,7 @@ static void htLCTranslate(NSString *text, NSString *from, NSString *to, HTLCRepl
     });
 }
 - (void)checkIdle {
+    if (self.easyMode) return;   // the easy path commits on its own isFinal result, not by polling
     NSString *text = self.hiddenInput.text;
     if (!text.length) return;
     // ~2s of silence after the keyboard's own dictation delivered text = treat it as one finished
@@ -224,6 +405,13 @@ static void htLCTranslate(NSString *text, NSString *from, NSString *to, HTLCRepl
     if (CFAbsoluteTimeGetCurrent() - self.lastChangeTime < 2.0) return;
     if ([text isEqualToString:self.lastCommitted]) return;
     self.lastCommitted = text;
+    [self commitCaption:text];
+    self.hiddenInput.text = @"";
+}
+// shared by both paths: pushes one finished sentence (original + translation) into the scrolling
+// history and resets the big live-caption line for whatever comes next
+- (void)commitCaption:(NSString *)text {
+    if (!text.length) return;
     NSArray *langs = htLCLangs();
     htLCTranslate(text, langs[self.fromIdx][0], langs[self.toIdx][0], ^(NSString *translated, NSString *error) {
         UILabel *orig = [UILabel new];
@@ -233,7 +421,6 @@ static void htLCTranslate(NSString *text, NSString *from, NSString *to, HTLCRepl
         UIStackView *pair = [[UIStackView alloc] initWithArrangedSubviews:@[orig, tr]];
         pair.axis = UILayoutConstraintAxisVertical; pair.spacing = 2;
         [self.history addArrangedSubview:pair];
-        self.hiddenInput.text = @"";
         self.liveCaption.text = @"…";
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.1 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
             [self.scroll setContentOffset:CGPointMake(0, MAX(0, self.scroll.contentSize.height - self.scroll.bounds.size.height)) animated:YES];
@@ -321,7 +508,7 @@ static void htInstallLiveCaptionButton(void) {
 }
 
 __attribute__((constructor)) static void init(void) {
-    raRegisterD(@"الإضافات", @"ht.livecaption", @"ترجمة فورية (كابشن)", @"زر ثابت بنفسجي يظهر فقط وأنت داخل Voice Room، يفتح شاشة ترجمة فورية لكلام أي شخص بالروم — باستخدام ديكتيشن لوحة المفاتيح", YES);
+    raRegisterD(@"الإضافات", @"ht.livecaption", @"ترجمة فورية (كابشن)", @"زر ثابت بنفسجي يظهر فقط وأنت داخل Voice Room — بضغطة وحدة يسمع ويترجم باستمرار (يحتاج إضافة مفتاح NSSpeechRecognitionUsageDescription بـ Info.plist مرة وحدة)، وإلا يرجع تلقائياً لطريقة ديكتيشن لوحة المفاتيح", YES);
     igdRun(@"HTLiveCaption", BUILD, ^{
         htInstallLiveCaptionButton();
         [NSNotificationCenter.defaultCenter addObserverForName:@"ra.livecaption" object:nil queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *n) {
