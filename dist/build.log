@@ -14,16 +14,16 @@ OK HTOnline
 OK HTSeen
 == FocusMode (all-in-one) ==
 OK FocusMode
-total 4984
-drwxr-xr-x  12 runner  staff     384 Oct 28 01:04 .
-drwxr-xr-x   8 runner  staff     256 Oct 28 01:03 ..
--rw-r--r--   1 runner  staff     213 Oct 28 01:04 build.log
--rwxr-xr-x   1 runner  staff  436480 Oct 28 01:04 FocusMode.dylib
--rwxr-xr-x   1 runner  staff  286544 Oct 28 01:04 HTAds.dylib
--rwxr-xr-x   1 runner  staff  330048 Oct 28 01:04 HTDict.dylib
--rwxr-xr-x   1 runner  staff  282656 Oct 28 01:04 HTFix.dylib
--rwxr-xr-x   1 runner  staff  288832 Oct 28 01:04 HTOnline.dylib
--rwxr-xr-x   1 runner  staff  288464 Oct 28 01:04 HTSave.dylib
--rwxr-xr-x   1 runner  staff  288096 Oct 28 01:04 HTSeen.dylib
--rwxr-xr-x   1 runner  staff  330048 Oct 28 01:04 HTTranslate.dylib
-drwxr-xr-x  10 runner  staff     320 Oct 28 01:04 obj
+total 5064
+drwxr-xr-x  12 runner  staff     384 Oct 28 01:15 .
+drwxr-xr-x   8 runner  staff     256 Oct 28 01:15 ..
+-rw-r--r--   1 runner  staff     213 Oct 28 01:15 build.log
+-rwxr-xr-x   1 runner  staff  455520 Oct 28 01:15 FocusMode.dylib
+-rwxr-xr-x   1 runner  staff  286544 Oct 28 01:15 HTAds.dylib
+-rwxr-xr-x   1 runner  staff  349664 Oct 28 01:15 HTDict.dylib
+-rwxr-xr-x   1 runner  staff  282656 Oct 28 01:15 HTFix.dylib
+-rwxr-xr-x   1 runner  staff  288832 Oct 28 01:15 HTOnline.dylib
+-rwxr-xr-x   1 runner  staff  288464 Oct 28 01:15 HTSave.dylib
+-rwxr-xr-x   1 runner  staff  288096 Oct 28 01:15 HTSeen.dylib
+-rwxr-xr-x   1 runner  staff  330048 Oct 28 01:15 HTTranslate.dylib
+drwxr-xr-x  10 runner  staff     320 Oct 28 01:15 obj
