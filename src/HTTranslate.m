@@ -660,7 +660,7 @@ static void htRecognizeText(UIImage *image, HTOcrReply reply) {
 - (void)promptForLang:(NSInteger)myLang otherLang:(NSInteger)otherLang mySide:(HTConversationBubble *)mine otherSide:(HTConversationBubble *)other {
     UIAlertController *a = [UIAlertController alertControllerWithTitle:[NSString stringWithFormat:@"تكلم بـ %@", gLangs[myLang][1]]
                                                                 message:@"اكتب، أو اضغط 🎤 بلوحة المفاتيح للديكتيشن" preferredStyle:UIAlertControllerStyleAlert];
-    [a addTextField:^(UITextField *tf) { tf.placeholder = @"..."; }];
+    [a addTextFieldWithConfigurationHandler:^(UITextField *tf) { tf.placeholder = @"..."; }];
     [a addAction:[UIAlertAction actionWithTitle:@"إلغاء" style:UIAlertActionStyleCancel handler:nil]];
     __weak UIAlertController *weakA = a;
     [a addAction:[UIAlertAction actionWithTitle:@"ترجم" style:UIAlertActionStyleDefault handler:^(UIAlertAction *act) {
