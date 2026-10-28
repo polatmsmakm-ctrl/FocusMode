@@ -57,9 +57,12 @@ static NSString *raIcon(NSString *k) {
     if ([k hasPrefix:@"ht.translate"]) return @"globe";
     if ([k hasPrefix:@"ht.online"]) return @"dot.radiowaves.left.and.right";
     if ([k hasPrefix:@"ht.lock"]) return @"faceid";
+    if ([k hasPrefix:@"ht.focus.wordday"]) return @"book.closed.fill";
     if ([k hasPrefix:@"ht.focus"]) return @"hourglass";
     if ([k hasPrefix:@"ht.accent"]) return @"paintpalette.fill";
     if ([k hasPrefix:@"ht.backup"]) return @"externaldrive.fill.badge.checkmark";
+    if ([k hasPrefix:@"ht.reminder"]) return @"bell.badge.fill";
+    if ([k hasPrefix:@"ht.phrases"]) return @"text.bubble.fill";
     return @"sparkles";
 }
 
@@ -125,7 +128,7 @@ static NSString *raIcon(NSString *k) {
     _table.tableHeaderView = h;
 
     // footer: credit
-    UIView *f = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 100, 380)];
+    UIView *f = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 100, 520)];
     UIView *line = [[UIView alloc] initWithFrame:CGRectMake(0, 22, 60, 1)];
     line.backgroundColor = [UIColor colorWithWhite:1 alpha:0.25];
     line.autoresizingMask = UIViewAutoresizingFlexibleLeftMargin | UIViewAutoresizingFlexibleRightMargin;
@@ -192,6 +195,42 @@ static NSString *raIcon(NSString *k) {
     bak.titleLabel.font = [UIFont systemFontOfSize:13 weight:UIFontWeightMedium];
     [bak addTarget:self action:@selector(backup) forControlEvents:UIControlEventTouchUpInside];
     [f addSubview:bak];
+    UIButton *voc = [UIButton buttonWithType:UIButtonTypeCustom];
+    voc.bounds = CGRectMake(0, 0, 170, 34);
+    voc.center = CGPointMake(50, 344);
+    voc.layer.cornerRadius = 17;
+    voc.backgroundColor = [UIColor colorWithWhite:1 alpha:0.14];
+    [voc setTitle:@"🎓 أدوات التعلم" forState:UIControlStateNormal];
+    voc.titleLabel.font = [UIFont systemFontOfSize:13 weight:UIFontWeightMedium];
+    [voc addTarget:self action:@selector(vocabtools) forControlEvents:UIControlEventTouchUpInside];
+    [f addSubview:voc];
+    UIButton *phr = [UIButton buttonWithType:UIButtonTypeCustom];
+    phr.bounds = CGRectMake(0, 0, 170, 34);
+    phr.center = CGPointMake(50, 386);
+    phr.layer.cornerRadius = 17;
+    phr.backgroundColor = [UIColor colorWithWhite:1 alpha:0.14];
+    [phr setTitle:@"💬 عبارات جاهزة" forState:UIControlStateNormal];
+    phr.titleLabel.font = [UIFont systemFontOfSize:13 weight:UIFontWeightMedium];
+    [phr addTarget:self action:@selector(phrases) forControlEvents:UIControlEventTouchUpInside];
+    [f addSubview:phr];
+    UIButton *wc = [UIButton buttonWithType:UIButtonTypeCustom];
+    wc.bounds = CGRectMake(0, 0, 170, 34);
+    wc.center = CGPointMake(50, 428);
+    wc.layer.cornerRadius = 17;
+    wc.backgroundColor = [UIColor colorWithWhite:1 alpha:0.14];
+    [wc setTitle:@"🕐 توقيت شريكك" forState:UIControlStateNormal];
+    wc.titleLabel.font = [UIFont systemFontOfSize:13 weight:UIFontWeightMedium];
+    [wc addTarget:self action:@selector(worldclock) forControlEvents:UIControlEventTouchUpInside];
+    [f addSubview:wc];
+    UIButton *nt = [UIButton buttonWithType:UIButtonTypeCustom];
+    nt.bounds = CGRectMake(0, 0, 170, 34);
+    nt.center = CGPointMake(50, 470);
+    nt.layer.cornerRadius = 17;
+    nt.backgroundColor = [UIColor colorWithWhite:1 alpha:0.14];
+    [nt setTitle:@"📝 ملاحظاتي" forState:UIControlStateNormal];
+    nt.titleLabel.font = [UIFont systemFontOfSize:13 weight:UIFontWeightMedium];
+    [nt addTarget:self action:@selector(notes) forControlEvents:UIControlEventTouchUpInside];
+    [f addSubview:nt];
     _table.tableFooterView = f;
 
     // close button
@@ -242,6 +281,22 @@ static NSString *raIcon(NSString *k) {
 - (void)backup {
     // HTBackup listens; it presents the export/import action sheet
     [NSNotificationCenter.defaultCenter postNotificationName:@"ra.backup" object:self];
+}
+- (void)vocabtools {
+    // HTVocabTools listens; it presents word-of-the-day + quiz + export on top of this menu
+    [NSNotificationCenter.defaultCenter postNotificationName:@"ra.vocabtools" object:self];
+}
+- (void)phrases {
+    // HTPhrases listens; it presents the quick-phrases list on top of this menu
+    [NSNotificationCenter.defaultCenter postNotificationName:@"ra.phrases" object:self];
+}
+- (void)worldclock {
+    // HTWorldClock listens; it presents the timezone lookup on top of this menu
+    [NSNotificationCenter.defaultCenter postNotificationName:@"ra.worldclock" object:self];
+}
+- (void)notes {
+    // HTNotes listens; it presents the notes pad on top of this menu
+    [NSNotificationCenter.defaultCenter postNotificationName:@"ra.notes" object:self];
 }
 - (NSArray *)groups {
     NSMutableArray *names = [NSMutableArray new];

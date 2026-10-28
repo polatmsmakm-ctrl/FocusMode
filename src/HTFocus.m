@@ -19,6 +19,8 @@
 #define HT_FOCUS_SECONDS_KEY @"ht.focus.seconds"
 #define HT_FOCUS_LASTBUCKET_KEY @"ht.focus.lastbucket"
 #define HT_FOCUS_NIGHT_SHOWN_KEY @"ht.focus.night.shownday"
+#define HT_FOCUS_QUIET_START_KEY @"ht.focus.quiet.start"
+#define HT_FOCUS_QUIET_END_KEY @"ht.focus.quiet.end"
 #define HT_FOCUS_BUCKET_MIN 30
 
 static NSInteger htTodayBucket(void) { return (NSInteger)floor(NSDate.date.timeIntervalSince1970 / 86400.0); }
@@ -240,6 +242,29 @@ static void htFocusMaybeShowNightChallenge(void) {
 static void htFocusStartBreak(NSInteger minutes) {
     htFocusPresent([[HTBreakVC alloc] initWithMinutes:minutes]);
 }
+static void htFocusAskQuietHours(void) {
+    UIViewController *top = raTop();
+    if (!top) return;
+    UIAlertController *a = [UIAlertController alertControllerWithTitle:@"ساعات هدوء تلقائية"
+        message:@"يقفل HelloTalk تلقائياً كل يوم بين الساعتين اللي تحددهم (0-23، بصيغة 24 ساعة — مثلاً من 23 إلى 6 يعني طول الليل)"
+        preferredStyle:UIAlertControllerStyleAlert];
+    NSInteger savedStart = [NSUserDefaults.standardUserDefaults integerForKey:HT_FOCUS_QUIET_START_KEY];
+    NSInteger savedEnd = [NSUserDefaults.standardUserDefaults integerForKey:HT_FOCUS_QUIET_END_KEY];
+    [a addTextFieldWithConfigurationHandler:^(UITextField *tf) { tf.placeholder = @"من (0-23)"; tf.keyboardType = UIKeyboardTypeNumberPad; tf.text = savedStart ? [NSString stringWithFormat:@"%ld", (long)savedStart] : @""; }];
+    [a addTextFieldWithConfigurationHandler:^(UITextField *tf) { tf.placeholder = @"إلى (0-23)"; tf.keyboardType = UIKeyboardTypeNumberPad; tf.text = savedEnd ? [NSString stringWithFormat:@"%ld", (long)savedEnd] : @""; }];
+    __weak UIAlertController *weakA = a;
+    [a addAction:[UIAlertAction actionWithTitle:@"حفظ وتفعيل" style:UIAlertActionStyleDefault handler:^(UIAlertAction *act) {
+        NSInteger start = [weakA.textFields[0].text integerValue];
+        NSInteger end = [weakA.textFields[1].text integerValue];
+        if (start < 0 || start > 23 || end < 0 || end > 23 || start == end) { igdToast(@"أدخل ساعتين صحيحتين ومختلفتين"); return; }
+        [NSUserDefaults.standardUserDefaults setInteger:start forKey:HT_FOCUS_QUIET_START_KEY];
+        [NSUserDefaults.standardUserDefaults setInteger:end forKey:HT_FOCUS_QUIET_END_KEY];
+        [NSUserDefaults.standardUserDefaults setBool:YES forKey:@"ra.ht.focus.quiet"];
+        igdToast(@"تم — فعّال من الآن");
+    }]];
+    [a addAction:[UIAlertAction actionWithTitle:@"إلغاء" style:UIAlertActionStyleCancel handler:nil]];
+    [top presentViewController:a animated:YES completion:nil];
+}
 static void htFocusAskBreak(void) {
     UIViewController *top = raTop();
     if (!top) return;
@@ -247,25 +272,71 @@ static void htFocusAskBreak(void) {
     for (NSNumber *m in @[@10, @20, @30, @60]) {
         [a addAction:[UIAlertAction actionWithTitle:[NSString stringWithFormat:@"%@ دقيقة", m] style:UIAlertActionStyleDefault handler:^(UIAlertAction *act) { htFocusStartBreak(m.integerValue); }]];
     }
+    [a addAction:[UIAlertAction actionWithTitle:@"🤫 ضبط ساعات هدوء تلقائية" style:UIAlertActionStyleDefault handler:^(UIAlertAction *act) { htFocusAskQuietHours(); }]];
     [a addAction:[UIAlertAction actionWithTitle:@"إلغاء" style:UIAlertActionStyleCancel handler:nil]];
     a.popoverPresentationController.sourceView = top.view;
     [top presentViewController:a animated:YES completion:nil];
+}
+static void htFocusMaybeShowQuietHours(void) {
+    if (!raOn(@"ht.focus.quiet")) return;
+    NSInteger start = [NSUserDefaults.standardUserDefaults integerForKey:HT_FOCUS_QUIET_START_KEY];
+    NSInteger end = [NSUserDefaults.standardUserDefaults integerForKey:HT_FOCUS_QUIET_END_KEY];
+    if (start == end) return;   // never configured
+    NSCalendar *cal = NSCalendar.currentCalendar;
+    NSInteger hour = [cal component:NSCalendarUnitHour fromDate:NSDate.date];
+    NSInteger minute = [cal component:NSCalendarUnitMinute fromDate:NSDate.date];
+    BOOL inWindow = (start < end) ? (hour >= start && hour < end) : (hour >= start || hour < end);   // handles overnight windows
+    if (!inWindow) return;
+    NSInteger minutesNow = hour * 60 + minute;
+    NSInteger endMinutes = end * 60;
+    NSInteger remain = (start < end) ? (endMinutes - minutesNow) : (((endMinutes + 24 * 60) - minutesNow) % (24 * 60));
+    if (remain <= 0) remain = 1;
+    htFocusPresent([[HTBreakVC alloc] initWithMinutes:remain]);
+}
+
+// ---- pomodoro (25 min work / 5 min locked break, repeating until the toggle is switched off) ----
+static NSTimeInterval gPomoPhaseEnd = 0;
+static BOOL gPomoBreak = NO;
+static void htPomodoroTick(void) {
+    if (!raOn(@"ht.focus.pomodoro")) { gPomoPhaseEnd = 0; return; }
+    NSTimeInterval now = NSDate.date.timeIntervalSince1970;
+    if (gPomoPhaseEnd == 0) {
+        gPomoBreak = NO;
+        gPomoPhaseEnd = now + 25 * 60;
+        igdToast(@"🍅 بدأ بومودورو — 25 دقيقة شغل");
+        return;
+    }
+    if (now < gPomoPhaseEnd) return;
+    if (!gPomoBreak) {
+        gPomoBreak = YES;
+        gPomoPhaseEnd = now + 5 * 60;
+        igdToast(@"⏸️ وقت الاستراحة — 5 دقايق");
+        htFocusStartBreak(5);
+    } else {
+        gPomoBreak = NO;
+        gPomoPhaseEnd = now + 25 * 60;
+        igdToast(@"🍅 جولة شغل جديدة — 25 دقيقة");
+    }
 }
 
 __attribute__((constructor)) static void init(void) {
     raRegisterD(@"الفوكس", @"ht.focus.usage", @"عداد وقت الاستخدام اليومي", @"تنبيه بسيط كل 30 دقيقة استخدام متراكم — محلي بالكامل، ما يطلع من جهازك", YES);
     raRegisterD(@"الفوكس", @"ht.focus.night", @"تحدي قبل الفتح بالليل", @"بين 12 والـ5 فجراً، لازم تحل مسألة بسيطة أول ما تفتح HelloTalk — مرة وحدة باليوم", NO);
+    raRegisterD(@"الفوكس", @"ht.focus.quiet", @"ساعات هدوء تلقائية", @"يقفل HelloTalk تلقائياً خلال الفترة اللي تحددها (اضبطها من زر ⏸️ استراحة بالقائمة)", NO);
+    raRegisterD(@"الفوكس", @"ht.focus.pomodoro", @"بومودورو (25/5)", @"يبدّل تلقائياً بين 25 دقيقة استخدام و5 دقائق استراحة مقفلة، يتكرر لين توقفه", NO);
     igdRun(@"HTFocus", BUILD, ^{
         gActiveStart = NSDate.date.timeIntervalSince1970;
         [NSNotificationCenter.defaultCenter addObserverForName:UIApplicationDidBecomeActiveNotification object:nil queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *n) {
             gActiveStart = NSDate.date.timeIntervalSince1970;
             htFocusMaybeShowNightChallenge();
+            htFocusMaybeShowQuietHours();
         }];
         [NSNotificationCenter.defaultCenter addObserverForName:UIApplicationWillResignActiveNotification object:nil queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *n) {
             htFocusFlush();
         }];
         [NSTimer scheduledTimerWithTimeInterval:60.0 repeats:YES block:^(NSTimer *t) {
             if (gActiveStart) { htFocusFlush(); gActiveStart = NSDate.date.timeIntervalSince1970; }
+            htPomodoroTick();
         }];
         [NSNotificationCenter.defaultCenter addObserverForName:@"ra.break" object:nil queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *n) {
             htFocusAskBreak();
