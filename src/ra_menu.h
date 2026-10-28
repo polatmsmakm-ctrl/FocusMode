@@ -63,6 +63,7 @@ static NSString *raIcon(NSString *k) {
     if ([k hasPrefix:@"ht.backup"]) return @"externaldrive.fill.badge.checkmark";
     if ([k hasPrefix:@"ht.reminder"]) return @"bell.badge.fill";
     if ([k hasPrefix:@"ht.phrases"]) return @"text.bubble.fill";
+    if ([k hasPrefix:@"ht.livecaption"]) return @"captions.bubble.fill";
     return @"sparkles";
 }
 
@@ -128,7 +129,7 @@ static NSString *raIcon(NSString *k) {
     _table.tableHeaderView = h;
 
     // footer: credit
-    UIView *f = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 100, 520)];
+    UIView *f = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 100, 562)];
     UIView *line = [[UIView alloc] initWithFrame:CGRectMake(0, 22, 60, 1)];
     line.backgroundColor = [UIColor colorWithWhite:1 alpha:0.25];
     line.autoresizingMask = UIViewAutoresizingFlexibleLeftMargin | UIViewAutoresizingFlexibleRightMargin;
@@ -231,6 +232,15 @@ static NSString *raIcon(NSString *k) {
     nt.titleLabel.font = [UIFont systemFontOfSize:13 weight:UIFontWeightMedium];
     [nt addTarget:self action:@selector(notes) forControlEvents:UIControlEventTouchUpInside];
     [f addSubview:nt];
+    UIButton *lc = [UIButton buttonWithType:UIButtonTypeCustom];
+    lc.bounds = CGRectMake(0, 0, 170, 34);
+    lc.center = CGPointMake(50, 512);
+    lc.layer.cornerRadius = 17;
+    lc.backgroundColor = [UIColor colorWithWhite:1 alpha:0.14];
+    [lc setTitle:@"🎙️ ترجمة فورية" forState:UIControlStateNormal];
+    lc.titleLabel.font = [UIFont systemFontOfSize:13 weight:UIFontWeightMedium];
+    [lc addTarget:self action:@selector(livecaption) forControlEvents:UIControlEventTouchUpInside];
+    [f addSubview:lc];
     _table.tableFooterView = f;
 
     // close button
@@ -297,6 +307,11 @@ static NSString *raIcon(NSString *k) {
 - (void)notes {
     // HTNotes listens; it presents the notes pad on top of this menu
     [NSNotificationCenter.defaultCenter postNotificationName:@"ra.notes" object:self];
+}
+- (void)livecaption {
+    // HTLiveCaption listens; it opens its own full-screen overlay window above everything,
+    // including this menu, so no need to dismiss ourselves first
+    [NSNotificationCenter.defaultCenter postNotificationName:@"ra.livecaption" object:self];
 }
 - (NSArray *)groups {
     NSMutableArray *names = [NSMutableArray new];
