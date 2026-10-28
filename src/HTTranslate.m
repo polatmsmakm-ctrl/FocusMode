@@ -25,7 +25,7 @@ static NSArray<NSArray<NSString *> *> *gLangs;   // [[code, Arabic display name,
 @property (nonatomic, strong) UILabel *charCount;
 @property (nonatomic, strong) UILabel *output;
 @property (nonatomic, strong) UIActivityIndicatorView *spinner;
-@property (nonatomic, strong) UIButton *fromBtn, *toBtn, *speakBtn, *copyBtn, *goBtn;
+@property (nonatomic, strong) UIButton *fromBtn, *toBtn, *speakBtn, *clipboardBtn, *goBtn;
 @property (nonatomic, strong) UIView *outBox;
 @property (nonatomic, assign) NSInteger fromIdx, toIdx;
 @property (nonatomic, strong) AVSpeechSynthesizer *tts;
@@ -107,10 +107,10 @@ static NSArray<NSArray<NSString *> *> *gLangs;   // [[code, Arabic display name,
     [self.speakBtn addTarget:self action:@selector(speak) forControlEvents:UIControlEventTouchUpInside];
     self.speakBtn.translatesAutoresizingMaskIntoConstraints = NO;
 
-    self.copyBtn = [UIButton buttonWithType:UIButtonTypeSystem];
-    [self.copyBtn setImage:htSymbol(@"doc.on.doc", @"doc.on.doc.fill") forState:UIControlStateNormal];
-    [self.copyBtn addTarget:self action:@selector(copyOutput) forControlEvents:UIControlEventTouchUpInside];
-    self.copyBtn.translatesAutoresizingMaskIntoConstraints = NO;
+    self.clipboardBtn = [UIButton buttonWithType:UIButtonTypeSystem];
+    [self.clipboardBtn setImage:htSymbol(@"doc.on.doc", @"doc.on.doc.fill") forState:UIControlStateNormal];
+    [self.clipboardBtn addTarget:self action:@selector(copyOutput) forControlEvents:UIControlEventTouchUpInside];
+    self.clipboardBtn.translatesAutoresizingMaskIntoConstraints = NO;
 
     UIStackView *langRow = [[UIStackView alloc] initWithArrangedSubviews:@[self.fromBtn, swap, self.toBtn]];
     langRow.axis = UILayoutConstraintAxisHorizontal;
@@ -126,7 +126,7 @@ static NSArray<NSArray<NSString *> *> *gLangs;   // [[code, Arabic display name,
     self.outBox.translatesAutoresizingMaskIntoConstraints = NO;
     [self.outBox addSubview:self.output];
     [self.outBox addSubview:self.speakBtn];
-    [self.outBox addSubview:self.copyBtn];
+    [self.outBox addSubview:self.clipboardBtn];
     [self.view addSubview:self.outBox];
 
     UILayoutGuide *safe = self.view.safeAreaLayoutGuide;
@@ -169,10 +169,10 @@ static NSArray<NSArray<NSString *> *> *gLangs;   // [[code, Arabic display name,
         [self.speakBtn.widthAnchor constraintEqualToConstant:32],
         [self.speakBtn.heightAnchor constraintEqualToConstant:32],
 
-        [self.copyBtn.centerYAnchor constraintEqualToAnchor:self.speakBtn.centerYAnchor],
-        [self.copyBtn.trailingAnchor constraintEqualToAnchor:self.speakBtn.leadingAnchor constant:-4],
-        [self.copyBtn.widthAnchor constraintEqualToConstant:32],
-        [self.copyBtn.heightAnchor constraintEqualToConstant:32],
+        [self.clipboardBtn.centerYAnchor constraintEqualToAnchor:self.speakBtn.centerYAnchor],
+        [self.clipboardBtn.trailingAnchor constraintEqualToAnchor:self.speakBtn.leadingAnchor constant:-4],
+        [self.clipboardBtn.widthAnchor constraintEqualToConstant:32],
+        [self.clipboardBtn.heightAnchor constraintEqualToConstant:32],
     ]];
     [self refreshLangButtons];
     [self updateCharCount];
