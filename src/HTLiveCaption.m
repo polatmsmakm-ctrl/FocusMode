@@ -8,7 +8,7 @@
 // dictation button sidesteps that entirely — it's a separate OS-level path needing no permission
 // declaration from this app. "🎙️ ترجمة فورية" in Ra Menu's footer.
 #import "igd_common.h"
-#define BUILD @"livecaption1"
+#define BUILD @"livecaption2"
 #define HT_LC_FROM_KEY @"ht.livecaption.from"
 #define HT_LC_TO_KEY @"ht.livecaption.to"
 
@@ -256,9 +256,74 @@ static void htLiveCaptionOpen(void) {
     [gLiveCaptionWindow makeKeyAndVisible];
 }
 
+// --- Fixed purple button, shown only while inside a HelloTalk Voice Room -----------------------
+// Detected by walking the live view-controller tree (nav stacks, tab stacks, child/presented VCs)
+// and checking class names for "VoiceRoom" — the real class names (VoiceRoomBusinessViewController,
+// VoiceRoomAudioViewController, VoiceRoomBaseViewController, ...) pulled from the 6.3.51 binary
+// itself. This is read-only inspection, not a hook into any of HelloTalk's own code or methods.
+static BOOL htVCTreeHasVoiceRoom(UIViewController *vc, NSInteger depth) {
+    if (!vc || depth > 8) return NO;
+    if ([NSStringFromClass(vc.class) containsString:@"VoiceRoom"]) return YES;
+    if ([vc isKindOfClass:[UINavigationController class]]) {
+        for (UIViewController *c in ((UINavigationController *)vc).viewControllers) {
+            if (htVCTreeHasVoiceRoom(c, depth + 1)) return YES;
+        }
+    }
+    if ([vc isKindOfClass:[UITabBarController class]]) {
+        if (htVCTreeHasVoiceRoom(((UITabBarController *)vc).selectedViewController, depth + 1)) return YES;
+    }
+    for (UIViewController *child in vc.childViewControllers) {
+        if (htVCTreeHasVoiceRoom(child, depth + 1)) return YES;
+    }
+    if (vc.presentedViewController) return htVCTreeHasVoiceRoom(vc.presentedViewController, depth + 1);
+    return NO;
+}
+static BOOL htInVoiceRoom(void) {
+    return htVCTreeHasVoiceRoom(igdKeyWindow().rootViewController, 0);
+}
+
+@interface HTLiveCaptionOpener : NSObject
++ (void)tap:(id)sender;
+@end
+@implementation HTLiveCaptionOpener
++ (void)tap:(id)sender { htLiveCaptionOpen(); }
+@end
+
+static void htInstallLiveCaptionButton(void) {
+    __block UIButton *btn = nil;
+    [NSTimer scheduledTimerWithTimeInterval:0.8 repeats:YES block:^(NSTimer *t) {
+        UIWindow *w = igdKeyWindow();
+        if (!w) return;
+        BOOL show = raOn(@"ht.livecaption") && htInVoiceRoom() && !(gLiveCaptionWindow && !gLiveCaptionWindow.hidden);
+        if (!btn) {
+            btn = [UIButton buttonWithType:UIButtonTypeCustom];
+            btn.bounds = CGRectMake(0, 0, 46, 46);
+            btn.layer.cornerRadius = 23;
+            btn.clipsToBounds = YES;
+            // HelloTalk's own voice-room theme is purple — matching it (instead of a clashing
+            // color) makes this read as part of the room's UI while still standing out as new
+            btn.backgroundColor = [UIColor colorWithRed:0.52 green:0.33 blue:0.92 alpha:0.96];
+            [btn setImage:htSymbolSized(@"captions.bubble.fill", @"text.bubble.fill", 19, UIImageSymbolWeightSemibold) forState:UIControlStateNormal];
+            btn.tintColor = UIColor.whiteColor;
+            btn.layer.borderWidth = 1.2;
+            btn.layer.borderColor = [UIColor colorWithWhite:1 alpha:0.55].CGColor;
+            btn.accessibilityIdentifier = @"ht.livecaption.btn";
+            [btn addTarget:[HTLiveCaptionOpener class] action:@selector(tap:) forControlEvents:UIControlEventTouchUpInside];
+        }
+        // fixed spot (not draggable): bottom-right, stacked just above the comment bar, in line
+        // with the room's existing right-side column of mic/action icons
+        CGSize S = w.bounds.size;
+        btn.center = CGPointMake(S.width - 38, S.height - w.safeAreaInsets.bottom - 190);
+        btn.hidden = !show;
+        if (btn.superview != w) [w addSubview:btn];
+        else if (show && w.subviews.lastObject != btn) [w bringSubviewToFront:btn];
+    }];
+}
+
 __attribute__((constructor)) static void init(void) {
-    raRegisterD(@"الإضافات", @"ht.livecaption", @"ترجمة فورية (كابشن)", @"يفتح شاشة تعرض ترجمة فورية لكلام أي شخص حولك، باستخدام ديكتيشن لوحة المفاتيح — مفيدة وقت المكالمات أو الكلام المباشر", YES);
+    raRegisterD(@"الإضافات", @"ht.livecaption", @"ترجمة فورية (كابشن)", @"زر ثابت بنفسجي يظهر فقط وأنت داخل Voice Room، يفتح شاشة ترجمة فورية لكلام أي شخص بالروم — باستخدام ديكتيشن لوحة المفاتيح", YES);
     igdRun(@"HTLiveCaption", BUILD, ^{
+        htInstallLiveCaptionButton();
         [NSNotificationCenter.defaultCenter addObserverForName:@"ra.livecaption" object:nil queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *n) {
             htLiveCaptionOpen();
         }];
