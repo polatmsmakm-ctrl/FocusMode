@@ -60,6 +60,19 @@ static void igdToast(NSString *msg) {
     });
 }
 
+// SF Symbol with a fallback name for older iOS versions where the preferred symbol doesn't exist
+// yet (systemImageNamed: just returns nil rather than crashing, but a nil button image is an easy
+// way to silently ship an invisible button — always go through one of these instead).
+static UIImage *htSymbol(NSString *name, NSString *fallback) IGD_UNUSED;
+static UIImage *htSymbol(NSString *name, NSString *fallback) {
+    return [UIImage systemImageNamed:name] ?: [UIImage systemImageNamed:fallback];
+}
+static UIImage *htSymbolSized(NSString *name, NSString *fallback, CGFloat pt, UIImageSymbolWeight weight) IGD_UNUSED;
+static UIImage *htSymbolSized(NSString *name, NSString *fallback, CGFloat pt, UIImageSymbolWeight weight) {
+    UIImageSymbolConfiguration *cfg = [UIImageSymbolConfiguration configurationWithPointSize:pt weight:weight];
+    return [UIImage systemImageNamed:name withConfiguration:cfg] ?: [UIImage systemImageNamed:fallback withConfiguration:cfg];
+}
+
 // Replace -[cls sel]. `make` receives (original IMP, selector, return-type char, extra-arg count)
 // and returns a block to use as the new implementation (or nil if unsupported).
 typedef id (^IGDMaker)(IMP orig, SEL sel, char ret, unsigned nargs);
