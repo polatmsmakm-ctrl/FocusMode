@@ -3,23 +3,126 @@
 // touches those, calls a free public translation API instead, and reads text aloud with iOS's
 // own on-device speech synthesizer. Opened from the "🌐 ترجمة" button in Ra Menu's footer.
 //
-// v2 fix: the previous version's output text was INVISIBLE in dark mode — a plain `[UILabel new]`
-// defaults to black text, sitting on this screen's near-black translucent output card, so every
-// translation was actually succeeding and just couldn't be seen. Fixed by setting explicit
-// semantic colors everywhere (never rely on UIKit's non-adaptive defaults again), plus a full
-// redesign: live debounced translation as you type, swap now swaps the text too, copy button,
-// remembered last-used language pair, friendlier handling of the free API's quota message, and
-// haptic feedback.
+// v3: rebuilt to match the reference mockup — a top row of four mode shortcuts (صورة/كاميرا للـ
+// OCR عبر Vision framework، استماع لتفعيل الديكتيشن حق لوحة المفاتيح، ومحادثة تفتح شاشة حوار
+// منفصلة)، وبانر يظهر تلقائياً إذا فيه نص بالكليبورد يقترح لصقه وترجمته فوراً.
+//
+// Deliberately NOT using SFSpeechRecognizer anywhere in this file: HelloTalk's own Info.plist is
+// missing NSSpeechRecognitionUsageDescription (confirmed by inspecting the compiled plist), and a
+// dylib injected after the app binary is already built cannot add that key — calling any
+// SFSpeechRecognizer API without it present crashes immediately at the OS permission-check level.
+// "استماع" instead just focuses the text field and tells the user to tap the mic icon that iOS's
+// own system keyboard already shows — a completely separate OS-level dictation path that needs no
+// permission from this app at all. "محادثة" mode (HTConversationVC) uses the same trick: typing
+// through an alert's text field, whose keyboard also carries the system dictation mic.
+//
+// v2 fix (kept): the previous version's output text was INVISIBLE in dark mode — a plain
+// `[UILabel new]` defaults to black text, sitting on this screen's near-black translucent output
+// card, so every translation was actually succeeding and just couldn't be seen. Fixed by setting
+// explicit semantic colors everywhere, plus: live debounced translation as you type, swap now
+// swaps the text too, copy button, remembered last-used language pair, friendlier handling of the
+// free API's quota message, and haptic feedback.
 #import "igd_common.h"
 #import <AVFoundation/AVFoundation.h>
-#define BUILD @"tr2"
+#import <Vision/Vision.h>
+#import <ImageIO/CGImageProperties.h>
+#define BUILD @"tr3"
 
 #define HT_TR_FROM_KEY @"ht.translate.from"
 #define HT_TR_TO_KEY @"ht.translate.to"
+#define HT_TR_LAST_CLIP_KEY @"ht.translate.lastclip"
 
 static NSArray<NSArray<NSString *> *> *gLangs;   // [[code, Arabic display name, flag emoji], ...]
 
-@interface HTTranslateVC : UIViewController <UITextViewDelegate>
+// ---- shared translate network call (used by both the main screen and conversation mode) -------
+typedef void (^HTTranslateReply)(NSString *translated, NSString *error);
+static void htTranslate(NSString *text, NSString *from, NSString *to, HTTranslateReply reply) {
+    NSString *trimmed = [text stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+    if (!trimmed.length) { reply(nil, @"النص فاضي."); return; }
+    NSString *esc = [trimmed stringByAddingPercentEncodingWithAllowedCharacters:NSCharacterSet.URLQueryAllowedCharacterSet];
+    // raw "|" breaks NSURL parsing on newer iOS (stricter RFC 3986 checking makes URLWithString:
+    // return nil for an unescaped pipe) — %7C fixes it
+    NSString *urlStr = [NSString stringWithFormat:@"https://api.mymemory.translated.net/get?q=%@&langpair=%@%%7C%@", esc, from, to];
+    NSURL *url = [NSURL URLWithString:urlStr];
+    if (!url) { reply(nil, @"تعذر تكوين الطلب."); return; }
+    NSURLSessionDataTask *t = [NSURLSession.sharedSession dataTaskWithURL:url completionHandler:^(NSData *data, NSURLResponse *resp, NSError *err) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            if (err || !data) { reply(nil, @"تعذر الاتصال — تأكد من الإنترنت."); return; }
+            NSDictionary *json = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
+            NSString *translated = json[@"responseData"][@"translatedText"];
+            NSInteger status = [json[@"responseStatus"] integerValue];
+            if ([translated.uppercaseString containsString:@"QUERY LENGTH LIMIT"] || [translated.uppercaseString containsString:@"MYMEMORY WARNING"]) {
+                reply(nil, @"تجاوزت الحد اليومي للترجمة المجانية — جرب بعد شوي."); return;
+            }
+            if (status != 0 && status != 200) { reply(nil, @"تعذرت الترجمة، حاول مرة ثانية."); return; }
+            if (!translated.length) { reply(nil, @"ما قدرت أترجم هالنص."); return; }
+            reply(translated, nil);
+        });
+    }];
+    [t resume];
+}
+
+// ---- OCR via Vision (on-device, no network, no extra permission beyond Camera/Photos which ----
+// ---- HelloTalk's Info.plist already declares) ---------------------------------------------------
+static CGImagePropertyOrientation htCGOrientation(UIImageOrientation o) {
+    switch (o) {
+        case UIImageOrientationUp: return kCGImagePropertyOrientationUp;
+        case UIImageOrientationDown: return kCGImagePropertyOrientationDown;
+        case UIImageOrientationLeft: return kCGImagePropertyOrientationLeft;
+        case UIImageOrientationRight: return kCGImagePropertyOrientationRight;
+        case UIImageOrientationUpMirrored: return kCGImagePropertyOrientationUpMirrored;
+        case UIImageOrientationDownMirrored: return kCGImagePropertyOrientationDownMirrored;
+        case UIImageOrientationLeftMirrored: return kCGImagePropertyOrientationLeftMirrored;
+        case UIImageOrientationRightMirrored: return kCGImagePropertyOrientationRightMirrored;
+    }
+    return kCGImagePropertyOrientationUp;
+}
+typedef void (^HTOcrReply)(NSString *text);
+static void htRecognizeText(UIImage *image, HTOcrReply reply) {
+    CGImageRef cg = image.CGImage;
+    if (!cg) { dispatch_async(dispatch_get_main_queue(), ^{ reply(nil); }); return; }
+    CGImagePropertyOrientation orient = htCGOrientation(image.imageOrientation);
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+        VNImageRequestHandler *handler = [[VNImageRequestHandler alloc] initWithCGImage:cg orientation:orient options:@{}];
+        VNRecognizeTextRequest *req = [[VNRecognizeTextRequest alloc] initWithCompletionHandler:^(VNRequest *request, NSError *error) {
+            if (error) { dispatch_async(dispatch_get_main_queue(), ^{ reply(nil); }); return; }
+            NSMutableArray *lines = [NSMutableArray new];
+            for (VNRecognizedTextObservation *obs in request.results) {
+                VNRecognizedText *top = [[obs topCandidates:1] firstObject];
+                if (top.string.length) [lines addObject:top.string];
+            }
+            dispatch_async(dispatch_get_main_queue(), ^{ reply([lines componentsJoinedByString:@"\n"]); });
+        }];
+        req.recognitionLevel = VNRequestTextRecognitionLevelAccurate;
+        req.usesLanguageCorrection = YES;
+        NSError *err = nil;
+        [handler performRequests:@[req] error:&err];
+        if (err) dispatch_async(dispatch_get_main_queue(), ^{ reply(nil); });
+    });
+}
+
+// ================================================================================================
+#pragma mark - forward interfaces (HTTranslateVC's openConversation needs HTConversationVC's shape;
+#pragma mark   the full implementations live further down, after HTTranslateVC)
+// ================================================================================================
+@interface HTConversationBubble : UIView
+@property (nonatomic, strong) UILabel *langLabel;
+@property (nonatomic, strong) UILabel *textLabel;
+@property (nonatomic, strong) UIButton *micButton;
+@end
+
+@interface HTConversationVC : UIViewController
+@property (nonatomic, assign) NSInteger fromIdx, toIdx;
+@property (nonatomic, strong) HTConversationBubble *topBubble, *bottomBubble;
+@property (nonatomic, strong) AVSpeechSynthesizer *tts;
+@end
+
+// ================================================================================================
+#pragma mark - HTTranslateVC
+// ================================================================================================
+@interface HTTranslateVC : UIViewController <UITextViewDelegate, UIImagePickerControllerDelegate, UINavigationControllerDelegate>
+@property (nonatomic, strong) UIView *clipBanner;
+@property (nonatomic, strong) UILabel *clipLabel;
 @property (nonatomic, strong) UITextView *input;
 @property (nonatomic, strong) UILabel *placeholder;
 @property (nonatomic, strong) UILabel *charCount;
@@ -32,6 +135,7 @@ static NSArray<NSArray<NSString *> *> *gLangs;   // [[code, Arabic display name,
 @property (nonatomic, strong) NSTimer *debounce;
 @property (nonatomic, assign) NSInteger requestGen;   // bumped per request; stale replies are dropped
 @property (nonatomic, assign) BOOL hasOutput;          // real translated text is showing (vs. placeholder/error)
+@property (nonatomic, strong) NSLayoutConstraint *clipBannerHeight;
 @end
 
 @implementation HTTranslateVC
@@ -45,6 +149,38 @@ static NSArray<NSArray<NSString *> *> *gLangs;   // [[code, Arabic display name,
     self.toIdx = (savedTo > 0 && savedTo < gLangs.count) ? savedTo : 1;
     self.tts = [AVSpeechSynthesizer new];
     self.navigationItem.rightBarButtonItem = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemDone target:self action:@selector(close)];
+
+    // ---- mode shortcut row: صورة / كاميرا / استماع / محادثة ----
+    UIStackView *modeRow = [self buildModeRow];
+    [self.view addSubview:modeRow];
+
+    // ---- clipboard-detected banner (hidden until viewWillAppear finds something worth offering) ----
+    self.clipBanner = [UIView new];
+    self.clipBanner.backgroundColor = [UIColor colorWithRed:0.42 green:0.45 blue:0.98 alpha:0.14];
+    self.clipBanner.layer.cornerRadius = 10;
+    self.clipBanner.clipsToBounds = YES;
+    self.clipBanner.translatesAutoresizingMaskIntoConstraints = NO;
+    UIImageView *clipIcon = [[UIImageView alloc] initWithImage:htSymbolSized(@"doc.on.clipboard.fill", @"doc.on.clipboard", 16, UIImageSymbolWeightMedium)];
+    clipIcon.tintColor = [UIColor colorWithRed:0.42 green:0.45 blue:0.98 alpha:1];
+    clipIcon.translatesAutoresizingMaskIntoConstraints = NO;
+    self.clipLabel = [UILabel new];
+    self.clipLabel.font = [UIFont systemFontOfSize:13 weight:UIFontWeightMedium];
+    self.clipLabel.textColor = UIColor.labelColor;
+    self.clipLabel.numberOfLines = 1;
+    self.clipLabel.text = @"فيه نص بالحافظة — اضغط للصق وترجمته";
+    self.clipLabel.translatesAutoresizingMaskIntoConstraints = NO;
+    UIButton *clipClose = [UIButton buttonWithType:UIButtonTypeSystem];
+    [clipClose setImage:htSymbolSized(@"xmark.circle.fill", @"xmark.circle", 15, UIImageSymbolWeightRegular) forState:UIControlStateNormal];
+    clipClose.tintColor = UIColor.tertiaryLabelColor;
+    [clipClose addTarget:self action:@selector(dismissClipBanner) forControlEvents:UIControlEventTouchUpInside];
+    clipClose.translatesAutoresizingMaskIntoConstraints = NO;
+    UITapGestureRecognizer *clipTap = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(useClipboard)];
+    [self.clipBanner addGestureRecognizer:clipTap];
+    [self.clipBanner addSubview:clipIcon];
+    [self.clipBanner addSubview:self.clipLabel];
+    [self.clipBanner addSubview:clipClose];
+    [self.view addSubview:self.clipBanner];
+    self.clipBanner.hidden = YES;
 
     self.input = [UITextView new];
     self.input.delegate = self;
@@ -130,8 +266,31 @@ static NSArray<NSArray<NSString *> *> *gLangs;   // [[code, Arabic display name,
     [self.view addSubview:self.outBox];
 
     UILayoutGuide *safe = self.view.safeAreaLayoutGuide;
+    self.clipBannerHeight = [self.clipBanner.heightAnchor constraintEqualToConstant:0];
     [NSLayoutConstraint activateConstraints:@[
-        [langRow.topAnchor constraintEqualToAnchor:safe.topAnchor constant:12],
+        [modeRow.topAnchor constraintEqualToAnchor:safe.topAnchor constant:10],
+        [modeRow.leadingAnchor constraintEqualToAnchor:safe.leadingAnchor constant:16],
+        [modeRow.trailingAnchor constraintEqualToAnchor:safe.trailingAnchor constant:-16],
+        [modeRow.heightAnchor constraintEqualToConstant:56],
+
+        [self.clipBanner.topAnchor constraintEqualToAnchor:modeRow.bottomAnchor constant:8],
+        [self.clipBanner.leadingAnchor constraintEqualToAnchor:safe.leadingAnchor constant:16],
+        [self.clipBanner.trailingAnchor constraintEqualToAnchor:safe.trailingAnchor constant:-16],
+        self.clipBannerHeight,
+
+        [clipIcon.leadingAnchor constraintEqualToAnchor:self.clipBanner.leadingAnchor constant:10],
+        [clipIcon.centerYAnchor constraintEqualToAnchor:self.clipBanner.centerYAnchor],
+        [clipIcon.widthAnchor constraintEqualToConstant:18],
+
+        [self.clipLabel.leadingAnchor constraintEqualToAnchor:clipIcon.trailingAnchor constant:8],
+        [self.clipLabel.centerYAnchor constraintEqualToAnchor:self.clipBanner.centerYAnchor],
+        [self.clipLabel.trailingAnchor constraintEqualToAnchor:clipClose.leadingAnchor constant:-8],
+
+        [clipClose.trailingAnchor constraintEqualToAnchor:self.clipBanner.trailingAnchor constant:-8],
+        [clipClose.centerYAnchor constraintEqualToAnchor:self.clipBanner.centerYAnchor],
+        [clipClose.widthAnchor constraintEqualToConstant:20],
+
+        [langRow.topAnchor constraintEqualToAnchor:self.clipBanner.bottomAnchor constant:8],
         [langRow.leadingAnchor constraintEqualToAnchor:safe.leadingAnchor constant:16],
         [langRow.trailingAnchor constraintEqualToAnchor:safe.trailingAnchor constant:-16],
         [langRow.heightAnchor constraintEqualToConstant:38],
@@ -177,6 +336,116 @@ static NSArray<NSArray<NSString *> *> *gLangs;   // [[code, Arabic display name,
     [self refreshLangButtons];
     [self updateCharCount];
 }
+
+- (UIButton *)modeButton:(NSString *)symbol fallback:(NSString *)fb title:(NSString *)title action:(SEL)sel {
+    UIButton *b = [UIButton buttonWithType:UIButtonTypeSystem];
+    b.translatesAutoresizingMaskIntoConstraints = NO;
+    [b setImage:htSymbolSized(symbol, fb, 20, UIImageSymbolWeightRegular) forState:UIControlStateNormal];
+    [b setTitle:title forState:UIControlStateNormal];
+    b.titleLabel.font = [UIFont systemFontOfSize:11 weight:UIFontWeightMedium];
+    if (@available(iOS 15.0, *)) {
+        UIButtonConfiguration *cfg = [UIButtonConfiguration plainButtonConfiguration];
+        cfg.imagePlacement = NSDirectionalRectEdgeTop;
+        cfg.imagePadding = 4;
+        cfg.baseForegroundColor = UIColor.labelColor;
+        b.configuration = cfg;
+    } else {
+        [b setTitleColor:UIColor.labelColor forState:UIControlStateNormal];
+    }
+    b.tintColor = [UIColor colorWithRed:0.42 green:0.45 blue:0.98 alpha:1];
+    b.backgroundColor = UIColor.secondarySystemBackgroundColor;
+    b.layer.cornerRadius = 10;
+    [b addTarget:self action:sel forControlEvents:UIControlEventTouchUpInside];
+    return b;
+}
+- (UIStackView *)buildModeRow {
+    UIButton *photoBtn = [self modeButton:@"photo.fill" fallback:@"photo" title:@"صورة" action:@selector(openPhotoOcr)];
+    UIButton *cameraBtn = [self modeButton:@"camera.fill" fallback:@"camera" title:@"كاميرا" action:@selector(openCameraOcr)];
+    UIButton *listenBtn = [self modeButton:@"mic.fill" fallback:@"mic" title:@"استماع" action:@selector(openDictation)];
+    UIButton *convoBtn = [self modeButton:@"bubble.left.and.bubble.right.fill" fallback:@"bubble.left.and.bubble.right" title:@"محادثة" action:@selector(openConversation)];
+    UIStackView *row = [[UIStackView alloc] initWithArrangedSubviews:@[photoBtn, cameraBtn, listenBtn, convoBtn]];
+    row.axis = UILayoutConstraintAxisHorizontal;
+    row.distribution = UIStackViewDistributionFillEqually;
+    row.spacing = 8;
+    row.translatesAutoresizingMaskIntoConstraints = NO;
+    return row;
+}
+
+- (void)viewWillAppear:(BOOL)animated {
+    [super viewWillAppear:animated];
+    [self checkClipboard];
+}
+- (void)checkClipboard {
+    NSString *s = [UIPasteboard.generalPasteboard.string stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+    NSString *last = [NSUserDefaults.standardUserDefaults stringForKey:HT_TR_LAST_CLIP_KEY];
+    BOOL worth = s.length > 1 && s.length < 500 && ![s isEqualToString:last] && ![s isEqualToString:self.input.text];
+    self.clipBannerHeight.constant = worth ? 36 : 0;
+    self.clipBanner.hidden = !worth;
+    if (worth) {
+        NSString *preview = s.length > 28 ? [[s substringToIndex:28] stringByAppendingString:@"…"] : s;
+        self.clipLabel.text = [NSString stringWithFormat:@"فيه نص بالحافظة: «%@» — اضغط للصق وترجمته", preview];
+    }
+    [UIView animateWithDuration:0.2 animations:^{ [self.view layoutIfNeeded]; }];
+}
+- (void)dismissClipBanner {
+    NSString *s = UIPasteboard.generalPasteboard.string;
+    if (s) [NSUserDefaults.standardUserDefaults setObject:s forKey:HT_TR_LAST_CLIP_KEY];
+    self.clipBannerHeight.constant = 0;
+    self.clipBanner.hidden = YES;
+    [UIView animateWithDuration:0.2 animations:^{ [self.view layoutIfNeeded]; }];
+}
+- (void)useClipboard {
+    NSString *s = UIPasteboard.generalPasteboard.string;
+    if (!s.length) return;
+    self.input.text = s;
+    [self updateCharCount];
+    [self dismissClipBanner];
+    [self goTapped];
+}
+
+// ---- mode row actions ----
+- (void)openPhotoOcr { [self presentPickerSource:UIImagePickerControllerSourceTypePhotoLibrary]; }
+- (void)openCameraOcr {
+    if (![UIImagePickerController isSourceTypeAvailable:UIImagePickerControllerSourceTypeCamera]) {
+        igdToast(@"الكاميرا غير متوفرة على هذا الجهاز"); return;
+    }
+    [self presentPickerSource:UIImagePickerControllerSourceTypeCamera];
+}
+- (void)presentPickerSource:(UIImagePickerControllerSourceType)src {
+    UIImagePickerController *p = [UIImagePickerController new];
+    p.sourceType = src;
+    p.delegate = self;
+    p.allowsEditing = NO;
+    [self presentViewController:p animated:YES completion:nil];
+}
+- (void)imagePickerController:(UIImagePickerController *)picker didFinishPickingMediaWithInfo:(NSDictionary<UIImagePickerControllerInfoKey,id> *)info {
+    UIImage *img = info[UIImagePickerControllerOriginalImage];
+    [picker dismissViewControllerAnimated:YES completion:^{
+        if (!img) return;
+        igdToast(@"جاري استخراج النص من الصورة…");
+        htRecognizeText(img, ^(NSString *text) {
+            if (!text.length) { igdToast(@"ما قدرت ألقط نص واضح من الصورة"); return; }
+            self.input.text = text;
+            [self updateCharCount];
+            [self goTapped];
+        });
+    }];
+}
+- (void)imagePickerControllerDidCancel:(UIImagePickerController *)picker {
+    [picker dismissViewControllerAnimated:YES completion:nil];
+}
+- (void)openDictation {
+    [self.input becomeFirstResponder];
+    igdToast(@"اضغط أيقونة المايك 🎤 بلوحة المفاتيح وابدأ الكلام");
+}
+- (void)openConversation {
+    HTConversationVC *vc = [HTConversationVC new];
+    vc.fromIdx = self.fromIdx; vc.toIdx = self.toIdx;
+    UINavigationController *nav = [[UINavigationController alloc] initWithRootViewController:vc];
+    nav.modalPresentationStyle = UIModalPresentationFullScreen;
+    [self presentViewController:nav animated:YES completion:nil];
+}
+
 - (UIButton *)langButton {
     UIButton *b = [UIButton buttonWithType:UIButtonTypeSystem];
     b.backgroundColor = UIColor.secondarySystemBackgroundColor;
@@ -248,27 +517,9 @@ static NSArray<NSArray<NSString *> *> *gLangs;   // [[code, Arabic display name,
     NSInteger myGen = self.requestGen;
     [self.spinner startAnimating];
     [self.goBtn setTitle:@"" forState:UIControlStateNormal];
-    NSString *from = gLangs[self.fromIdx][0], *to = gLangs[self.toIdx][0];
-    NSString *esc = [text stringByAddingPercentEncodingWithAllowedCharacters:NSCharacterSet.URLQueryAllowedCharacterSet];
-    // the raw "|" below used to break NSURL parsing on newer iOS (stricter RFC 3986 checking makes
-    // URLWithString: return nil for an unescaped pipe) — that was the "تعذر تكوين الطلب" bug; %7C fixes it
-    NSString *urlStr = [NSString stringWithFormat:@"https://api.mymemory.translated.net/get?q=%@&langpair=%@%%7C%@", esc, from, to];
-    NSURL *url = [NSURL URLWithString:urlStr];
-    if (!url) { [self finishWithText:@"تعذر تكوين الطلب." isError:YES gen:myGen]; return; }
-    NSURLSessionDataTask *t = [NSURLSession.sharedSession dataTaskWithURL:url completionHandler:^(NSData *data, NSURLResponse *resp, NSError *err) {
-        dispatch_async(dispatch_get_main_queue(), ^{
-            if (err || !data) { [self finishWithText:@"تعذر الاتصال — تأكد من الإنترنت." isError:YES gen:myGen]; return; }
-            NSDictionary *json = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
-            NSString *translated = json[@"responseData"][@"translatedText"];
-            NSInteger status = [json[@"responseStatus"] integerValue];
-            if ([translated.uppercaseString containsString:@"QUERY LENGTH LIMIT"] || [translated.uppercaseString containsString:@"MYMEMORY WARNING"]) {
-                [self finishWithText:@"تجاوزت الحد اليومي للترجمة المجانية — جرب بعد شوي." isError:YES gen:myGen]; return;
-            }
-            if (status != 0 && status != 200) { [self finishWithText:@"تعذرت الترجمة، حاول مرة ثانية." isError:YES gen:myGen]; return; }
-            [self finishWithText:(translated.length ? translated : @"ما قدرت أترجم هالنص.") isError:!translated.length gen:myGen];
-        });
-    }];
-    [t resume];
+    htTranslate(text, gLangs[self.fromIdx][0], gLangs[self.toIdx][0], ^(NSString *translated, NSString *error) {
+        [self finishWithText:(translated ?: error) isError:(translated == nil) gen:myGen];
+    });
 }
 - (void)finishWithText:(NSString *)text isError:(BOOL)isError gen:(NSInteger)gen {
     if (gen != self.requestGen) return;   // a newer request already landed; drop this stale reply
@@ -295,13 +546,148 @@ static NSArray<NSArray<NSString *> *> *gLangs;   // [[code, Arabic display name,
 }
 @end
 
+// ================================================================================================
+#pragma mark - HTConversationVC — two-sided face-to-face mode
+// ================================================================================================
+// Each side is a big tappable panel. Tapping it opens a small alert with a text field — its
+// keyboard carries iOS's own dictation mic, so this is real voice input without ever touching
+// SFSpeechRecognizer. The typed/dictated line gets translated to the OTHER side's language and
+// spoken aloud there automatically, like a real face-to-face conversation aid.
+@implementation HTConversationBubble
+- (instancetype)init {
+    self = [super init];
+    self.backgroundColor = UIColor.secondarySystemBackgroundColor;
+    self.layer.cornerRadius = 16;
+    self.translatesAutoresizingMaskIntoConstraints = NO;
+
+    self.langLabel = [UILabel new];
+    self.langLabel.font = [UIFont boldSystemFontOfSize:13];
+    self.langLabel.textColor = UIColor.secondaryLabelColor;
+    self.langLabel.translatesAutoresizingMaskIntoConstraints = NO;
+
+    self.textLabel = [UILabel new];
+    self.textLabel.font = [UIFont systemFontOfSize:20];
+    self.textLabel.textColor = UIColor.labelColor;
+    self.textLabel.numberOfLines = 0;
+    self.textLabel.text = @"اضغط المايك وابدأ الكلام";
+    self.textLabel.translatesAutoresizingMaskIntoConstraints = NO;
+
+    self.micButton = [UIButton buttonWithType:UIButtonTypeSystem];
+    [self.micButton setImage:htSymbolSized(@"mic.circle.fill", @"mic.circle", 48, UIImageSymbolWeightRegular) forState:UIControlStateNormal];
+    self.micButton.tintColor = [UIColor colorWithRed:0.42 green:0.45 blue:0.98 alpha:1];
+    self.micButton.translatesAutoresizingMaskIntoConstraints = NO;
+
+    [self addSubview:self.langLabel];
+    [self addSubview:self.textLabel];
+    [self addSubview:self.micButton];
+    [NSLayoutConstraint activateConstraints:@[
+        [self.langLabel.topAnchor constraintEqualToAnchor:self.topAnchor constant:12],
+        [self.langLabel.leadingAnchor constraintEqualToAnchor:self.leadingAnchor constant:14],
+
+        [self.textLabel.topAnchor constraintEqualToAnchor:self.langLabel.bottomAnchor constant:6],
+        [self.textLabel.leadingAnchor constraintEqualToAnchor:self.leadingAnchor constant:14],
+        [self.textLabel.trailingAnchor constraintEqualToAnchor:self.micButton.leadingAnchor constant:-10],
+
+        [self.micButton.trailingAnchor constraintEqualToAnchor:self.trailingAnchor constant:-10],
+        [self.micButton.centerYAnchor constraintEqualToAnchor:self.centerYAnchor],
+        [self.micButton.widthAnchor constraintEqualToConstant:52],
+        [self.micButton.heightAnchor constraintEqualToConstant:52],
+        [self.textLabel.bottomAnchor constraintLessThanOrEqualToAnchor:self.bottomAnchor constant:-12],
+    ]];
+    return self;
+}
+@end
+
+@implementation HTConversationVC
+- (void)viewDidLoad {
+    [super viewDidLoad];
+    self.view.backgroundColor = UIColor.systemBackgroundColor;
+    self.title = @"محادثة";
+    self.tts = [AVSpeechSynthesizer new];
+    self.navigationItem.rightBarButtonItem = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemDone target:self action:@selector(close)];
+
+    self.topBubble = [HTConversationBubble new];
+    self.bottomBubble = [HTConversationBubble new];
+    [self.topBubble.micButton addTarget:self action:@selector(tapTop) forControlEvents:UIControlEventTouchUpInside];
+    [self.bottomBubble.micButton addTarget:self action:@selector(tapBottom) forControlEvents:UIControlEventTouchUpInside];
+    [self.view addSubview:self.topBubble];
+    [self.view addSubview:self.bottomBubble];
+
+    UIButton *swap = [UIButton buttonWithType:UIButtonTypeSystem];
+    [swap setImage:htSymbolSized(@"arrow.up.arrow.down", @"arrow.2.squarepath", 22, UIImageSymbolWeightMedium) forState:UIControlStateNormal];
+    [swap addTarget:self action:@selector(swapLangs) forControlEvents:UIControlEventTouchUpInside];
+    swap.backgroundColor = UIColor.systemBackgroundColor;
+    swap.layer.cornerRadius = 18;
+    swap.layer.borderWidth = 1;
+    swap.layer.borderColor = UIColor.separatorColor.CGColor;
+    swap.translatesAutoresizingMaskIntoConstraints = NO;
+    [self.view addSubview:swap];
+
+    UILayoutGuide *safe = self.view.safeAreaLayoutGuide;
+    [NSLayoutConstraint activateConstraints:@[
+        [self.topBubble.topAnchor constraintEqualToAnchor:safe.topAnchor constant:16],
+        [self.topBubble.leadingAnchor constraintEqualToAnchor:safe.leadingAnchor constant:16],
+        [self.topBubble.trailingAnchor constraintEqualToAnchor:safe.trailingAnchor constant:-16],
+        [self.topBubble.heightAnchor constraintGreaterThanOrEqualToConstant:140],
+        [self.topBubble.bottomAnchor constraintEqualToAnchor:self.view.centerYAnchor constant:-28],
+
+        [swap.centerXAnchor constraintEqualToAnchor:self.view.centerXAnchor],
+        [swap.centerYAnchor constraintEqualToAnchor:self.view.centerYAnchor],
+        [swap.widthAnchor constraintEqualToConstant:36],
+        [swap.heightAnchor constraintEqualToConstant:36],
+
+        [self.bottomBubble.topAnchor constraintEqualToAnchor:self.view.centerYAnchor constant:28],
+        [self.bottomBubble.leadingAnchor constraintEqualToAnchor:safe.leadingAnchor constant:16],
+        [self.bottomBubble.trailingAnchor constraintEqualToAnchor:safe.trailingAnchor constant:-16],
+        [self.bottomBubble.heightAnchor constraintGreaterThanOrEqualToConstant:140],
+        [self.bottomBubble.bottomAnchor constraintLessThanOrEqualToAnchor:safe.bottomAnchor constant:-16],
+    ]];
+    [self refresh];
+}
+- (void)refresh {
+    self.topBubble.langLabel.text = [NSString stringWithFormat:@"%@ %@", gLangs[self.toIdx][2], gLangs[self.toIdx][1]];
+    self.bottomBubble.langLabel.text = [NSString stringWithFormat:@"%@ %@", gLangs[self.fromIdx][2], gLangs[self.fromIdx][1]];
+}
+- (void)swapLangs {
+    NSInteger t = self.fromIdx; self.fromIdx = self.toIdx; self.toIdx = t;
+    [[UISelectionFeedbackGenerator new] selectionChanged];
+    [self refresh];
+}
+- (void)close { [self dismissViewControllerAnimated:YES completion:nil]; }
+// tapping the BOTTOM mic speaks in fromIdx's language, translates to toIdx, shows+speaks on TOP
+- (void)tapBottom { [self promptForLang:self.fromIdx otherLang:self.toIdx mySide:self.bottomBubble otherSide:self.topBubble]; }
+- (void)tapTop { [self promptForLang:self.toIdx otherLang:self.fromIdx mySide:self.topBubble otherSide:self.bottomBubble]; }
+- (void)promptForLang:(NSInteger)myLang otherLang:(NSInteger)otherLang mySide:(HTConversationBubble *)mine otherSide:(HTConversationBubble *)other {
+    UIAlertController *a = [UIAlertController alertControllerWithTitle:[NSString stringWithFormat:@"تكلم بـ %@", gLangs[myLang][1]]
+                                                                message:@"اكتب، أو اضغط 🎤 بلوحة المفاتيح للديكتيشن" preferredStyle:UIAlertControllerStyleAlert];
+    [a addTextField:^(UITextField *tf) { tf.placeholder = @"..."; }];
+    [a addAction:[UIAlertAction actionWithTitle:@"إلغاء" style:UIAlertActionStyleCancel handler:nil]];
+    __weak UIAlertController *weakA = a;
+    [a addAction:[UIAlertAction actionWithTitle:@"ترجم" style:UIAlertActionStyleDefault handler:^(UIAlertAction *act) {
+        NSString *text = weakA.textFields.firstObject.text;
+        if (!text.length) return;
+        mine.textLabel.text = text;
+        mine.textLabel.textColor = UIColor.labelColor;
+        htTranslate(text, gLangs[myLang][0], gLangs[otherLang][0], ^(NSString *translated, NSString *error) {
+            if (!translated) { igdToast(error); return; }
+            other.textLabel.text = translated;
+            other.textLabel.textColor = UIColor.labelColor;
+            AVSpeechUtterance *u = [AVSpeechUtterance speechUtteranceWithString:translated];
+            u.voice = [AVSpeechSynthesisVoice voiceWithLanguage:gLangs[otherLang][0]] ?: [AVSpeechSynthesisVoice voiceWithLanguage:@"en-US"];
+            [self.tts speakUtterance:u];
+        });
+    }]];
+    [self presentViewController:a animated:YES completion:nil];
+}
+@end
+
 __attribute__((constructor)) static void init(void) {
     gLangs = @[
         @[@"en", @"الإنجليزية", @"🇬🇧"], @[@"ar", @"العربية", @"🇸🇦"], @[@"es", @"الإسبانية", @"🇪🇸"], @[@"fr", @"الفرنسية", @"🇫🇷"],
         @[@"de", @"الألمانية", @"🇩🇪"], @[@"tr", @"التركية", @"🇹🇷"], @[@"ja", @"اليابانية", @"🇯🇵"], @[@"ko", @"الكورية", @"🇰🇷"],
         @[@"zh-CN", @"الصينية", @"🇨🇳"], @[@"ru", @"الروسية", @"🇷🇺"], @[@"pt", @"البرتغالية", @"🇵🇹"], @[@"it", @"الإيطالية", @"🇮🇹"],
     ];
-    raRegisterD(@"الإضافات", @"ht.translate", @"الترجمة والنطق", @"مستقلة تماماً عن ترجمة HelloTalk المدفوعة — زر 🌐 بأسفل Ra Menu، ترجمة فورية أثناء الكتابة + نطق صوتي من نظام iOS", YES);
+    raRegisterD(@"الإضافات", @"ht.translate", @"الترجمة والنطق", @"زر 🌐 بأسفل Ra Menu — ترجمة فورية أثناء الكتابة، نطق صوتي، ترجمة من صورة/كاميرا (OCR)، ووضع محادثة وجه لوجه", YES);
     igdRun(@"HTTranslate", BUILD, ^{
         [NSNotificationCenter.defaultCenter addObserverForName:@"ra.translate" object:nil queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *n) {
             if (!raOn(@"ht.translate")) { igdToast(@"الترجمة مطفية من Ra Menu"); return; }

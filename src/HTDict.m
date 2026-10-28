@@ -118,6 +118,8 @@ static NSString *htMWAudioURL(NSString *audio) {
 @property (nonatomic, strong) UILabel *headwordLabel, *phoneticLabel, *sourceLabel;
 @property (nonatomic, strong) UIButton *playButton;
 @property (nonatomic, strong) UIView *resultHeader;
+@property (nonatomic, strong) UIView *mwBanner;
+@property (nonatomic, strong) UILabel *recentHeader;
 @property (nonatomic, strong) UIScrollView *recentScroll;
 @property (nonatomic, strong) UIStackView *recentStack;
 @property (nonatomic, strong) NSArray<NSDictionary *> *groups;   // [{"pos": "noun", "rows": [{"definition","example","synonyms"}]}]
@@ -197,6 +199,37 @@ static NSString *htMWAudioURL(NSString *audio) {
         [self.phoneticLabel.leadingAnchor constraintGreaterThanOrEqualToAnchor:self.playButton.trailingAnchor constant:8],
     ]];
 
+    self.mwBanner = [UIView new];
+    self.mwBanner.backgroundColor = [UIColor.systemYellowColor colorWithAlphaComponent:0.14];
+    self.mwBanner.layer.cornerRadius = 10;
+    self.mwBanner.translatesAutoresizingMaskIntoConstraints = NO;
+    [self.mwBanner addGestureRecognizer:[[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(openSettings)]];
+    UILabel *mwText = [UILabel new];
+    mwText.numberOfLines = 0;
+    mwText.font = [UIFont systemFontOfSize:13];
+    NSMutableAttributedString *att = [[NSMutableAttributedString alloc]
+        initWithString:@"لتعريفات Merriam-Webster الرسمية أضف المفتاح المجاني من الإعدادات. "
+        attributes:@{NSForegroundColorAttributeName: UIColor.secondaryLabelColor}];
+    [att appendAttributedString:[[NSAttributedString alloc] initWithString:@"إضافة المفتاح"
+        attributes:@{NSForegroundColorAttributeName: UIColor.systemIndigoColor, NSFontAttributeName: [UIFont boldSystemFontOfSize:13]}]];
+    mwText.attributedText = att;
+    mwText.translatesAutoresizingMaskIntoConstraints = NO;
+    [self.mwBanner addSubview:mwText];
+    [NSLayoutConstraint activateConstraints:@[
+        [mwText.topAnchor constraintEqualToAnchor:self.mwBanner.topAnchor constant:10],
+        [mwText.bottomAnchor constraintEqualToAnchor:self.mwBanner.bottomAnchor constant:-10],
+        [mwText.leadingAnchor constraintEqualToAnchor:self.mwBanner.leadingAnchor constant:12],
+        [mwText.trailingAnchor constraintEqualToAnchor:self.mwBanner.trailingAnchor constant:-12],
+    ]];
+    [self.view addSubview:self.mwBanner];
+
+    self.recentHeader = [UILabel new];
+    self.recentHeader.text = @"آخر عمليات البحث";
+    self.recentHeader.font = [UIFont boldSystemFontOfSize:13];
+    self.recentHeader.textColor = UIColor.secondaryLabelColor;
+    self.recentHeader.translatesAutoresizingMaskIntoConstraints = NO;
+    [self.view addSubview:self.recentHeader];
+
     self.recentStack = [UIStackView new];
     self.recentStack.axis = UILayoutConstraintAxisHorizontal;
     self.recentStack.spacing = 8;
@@ -227,11 +260,18 @@ static NSString *htMWAudioURL(NSString *audio) {
         [self.field.trailingAnchor constraintEqualToAnchor:safe.trailingAnchor constant:-16],
         [self.field.heightAnchor constraintEqualToConstant:40],
 
-        [self.resultHeader.topAnchor constraintEqualToAnchor:self.field.bottomAnchor constant:10],
+        [self.mwBanner.topAnchor constraintEqualToAnchor:self.field.bottomAnchor constant:10],
+        [self.mwBanner.leadingAnchor constraintEqualToAnchor:safe.leadingAnchor constant:16],
+        [self.mwBanner.trailingAnchor constraintEqualToAnchor:safe.trailingAnchor constant:-16],
+
+        [self.resultHeader.topAnchor constraintEqualToAnchor:self.mwBanner.bottomAnchor constant:10],
         [self.resultHeader.leadingAnchor constraintEqualToAnchor:safe.leadingAnchor constant:16],
         [self.resultHeader.trailingAnchor constraintEqualToAnchor:safe.trailingAnchor constant:-16],
 
-        [self.recentScroll.topAnchor constraintEqualToAnchor:self.resultHeader.bottomAnchor constant:8],
+        [self.recentHeader.topAnchor constraintEqualToAnchor:self.resultHeader.bottomAnchor constant:10],
+        [self.recentHeader.trailingAnchor constraintEqualToAnchor:safe.trailingAnchor constant:-16],
+
+        [self.recentScroll.topAnchor constraintEqualToAnchor:self.recentHeader.bottomAnchor constant:4],
         [self.recentScroll.leadingAnchor constraintEqualToAnchor:safe.leadingAnchor constant:16],
         [self.recentScroll.trailingAnchor constraintEqualToAnchor:safe.trailingAnchor constant:-16],
         [self.recentScroll.heightAnchor constraintEqualToConstant:34],
@@ -249,6 +289,7 @@ static NSString *htMWAudioURL(NSString *audio) {
         [self.table.bottomAnchor constraintEqualToAnchor:self.view.bottomAnchor],
     ]];
     [self reloadRecentChips];
+    [self updateMWBanner];
     [self setEmptyState:@"ابحث عن أي كلمة إنجليزية"];
     [self.field becomeFirstResponder];
 }
@@ -270,9 +311,14 @@ static NSString *htMWAudioURL(NSString *audio) {
         NSString *key = [a.textFields.firstObject.text stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
         [NSUserDefaults.standardUserDefaults setObject:key forKey:HT_DICT_MW_KEY];
         igdToast(key.length ? @"تم حفظ المفتاح" : @"رجعت للقاموس المجاني");
+        [self updateMWBanner];
     }]];
     [a addAction:[UIAlertAction actionWithTitle:@"إلغاء" style:UIAlertActionStyleCancel handler:nil]];
     [self presentViewController:a animated:YES completion:nil];
+}
+- (void)updateMWBanner {
+    NSString *key = [NSUserDefaults.standardUserDefaults stringForKey:HT_DICT_MW_KEY];
+    self.mwBanner.hidden = key.length > 0;
 }
 
 - (void)reloadRecentChips {
@@ -281,7 +327,9 @@ static NSString *htMWAudioURL(NSString *audio) {
         [v removeFromSuperview];
     }
     NSArray<NSString *> *recent = htDictRecent();
-    self.recentScroll.hidden = (self.groups.count > 0) || !recent.count;
+    BOOL showRecent = (self.groups.count == 0) && recent.count > 0;
+    self.recentScroll.hidden = !showRecent;
+    self.recentHeader.hidden = !showRecent;
     NSInteger i = 0;
     for (NSString *w in recent) {
         UIButton *chip = [UIButton buttonWithType:UIButtonTypeSystem];
@@ -365,7 +413,7 @@ static NSString *htMWAudioURL(NSString *audio) {
                 // MW returns plain strings instead of entries when the word isn't found: spelling suggestions
                 self.suggestions = arr;
                 [self setEmptyState:[NSString stringWithFormat:@"ما لقيت \"%@\" — جرب إحدى هذي:", word]];
-                self.recentScroll.hidden = YES;
+                self.recentScroll.hidden = YES; self.recentHeader.hidden = YES;
                 [self showSuggestionChips];
                 [self.spinner stopAnimating];
                 [self.table reloadData];
@@ -378,7 +426,7 @@ static NSString *htMWAudioURL(NSString *audio) {
 }
 - (void)showSuggestionChips {
     for (UIView *v in self.recentStack.arrangedSubviews.copy) { [self.recentStack removeArrangedSubview:v]; [v removeFromSuperview]; }
-    self.recentScroll.hidden = !self.suggestions.count;
+    self.recentScroll.hidden = !self.suggestions.count; self.recentHeader.hidden = YES;
     NSInteger i = 0;
     for (NSString *w in self.suggestions) {
         UIButton *chip = [UIButton buttonWithType:UIButtonTypeSystem];
@@ -491,7 +539,7 @@ static NSString *htMWAudioURL(NSString *audio) {
 - (void)finishNotFound:(NSString *)word {
     [self.spinner stopAnimating];
     [self setEmptyState:[NSString stringWithFormat:@"ما لقيت \"%@\"", word]];
-    self.recentScroll.hidden = YES;
+    self.recentScroll.hidden = YES; self.recentHeader.hidden = YES;
     [self.table reloadData];
 }
 
