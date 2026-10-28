@@ -56,6 +56,10 @@ static NSString *raIcon(NSString *k) {
     if ([k hasPrefix:@"ht.save"]) return @"arrow.down.circle.fill";
     if ([k hasPrefix:@"ht.translate"]) return @"globe";
     if ([k hasPrefix:@"ht.online"]) return @"dot.radiowaves.left.and.right";
+    if ([k hasPrefix:@"ht.lock"]) return @"faceid";
+    if ([k hasPrefix:@"ht.focus"]) return @"hourglass";
+    if ([k hasPrefix:@"ht.accent"]) return @"paintpalette.fill";
+    if ([k hasPrefix:@"ht.backup"]) return @"externaldrive.fill.badge.checkmark";
     return @"sparkles";
 }
 
@@ -121,7 +125,7 @@ static NSString *raIcon(NSString *k) {
     _table.tableHeaderView = h;
 
     // footer: credit
-    UIView *f = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 100, 240)];
+    UIView *f = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 100, 380)];
     UIView *line = [[UIView alloc] initWithFrame:CGRectMake(0, 22, 60, 1)];
     line.backgroundColor = [UIColor colorWithWhite:1 alpha:0.25];
     line.autoresizingMask = UIViewAutoresizingFlexibleLeftMargin | UIViewAutoresizingFlexibleRightMargin;
@@ -161,6 +165,33 @@ static NSString *raIcon(NSString *k) {
     tr.titleLabel.font = [UIFont systemFontOfSize:13 weight:UIFontWeightMedium];
     [tr addTarget:self action:@selector(translate) forControlEvents:UIControlEventTouchUpInside];
     [f addSubview:tr];
+    UIButton *brk = [UIButton buttonWithType:UIButtonTypeCustom];
+    brk.bounds = CGRectMake(0, 0, 170, 34);
+    brk.center = CGPointMake(50, 218);
+    brk.layer.cornerRadius = 17;
+    brk.backgroundColor = [UIColor colorWithWhite:1 alpha:0.14];
+    [brk setTitle:@"⏸️ استراحة" forState:UIControlStateNormal];
+    brk.titleLabel.font = [UIFont systemFontOfSize:13 weight:UIFontWeightMedium];
+    [brk addTarget:self action:@selector(breakMode) forControlEvents:UIControlEventTouchUpInside];
+    [f addSubview:brk];
+    UIButton *acc = [UIButton buttonWithType:UIButtonTypeCustom];
+    acc.bounds = CGRectMake(0, 0, 170, 34);
+    acc.center = CGPointMake(50, 260);
+    acc.layer.cornerRadius = 17;
+    acc.backgroundColor = [UIColor colorWithWhite:1 alpha:0.14];
+    [acc setTitle:@"🎨 لون التطبيق" forState:UIControlStateNormal];
+    acc.titleLabel.font = [UIFont systemFontOfSize:13 weight:UIFontWeightMedium];
+    [acc addTarget:self action:@selector(accent) forControlEvents:UIControlEventTouchUpInside];
+    [f addSubview:acc];
+    UIButton *bak = [UIButton buttonWithType:UIButtonTypeCustom];
+    bak.bounds = CGRectMake(0, 0, 170, 34);
+    bak.center = CGPointMake(50, 302);
+    bak.layer.cornerRadius = 17;
+    bak.backgroundColor = [UIColor colorWithWhite:1 alpha:0.14];
+    [bak setTitle:@"💾 نسخ احتياطي" forState:UIControlStateNormal];
+    bak.titleLabel.font = [UIFont systemFontOfSize:13 weight:UIFontWeightMedium];
+    [bak addTarget:self action:@selector(backup) forControlEvents:UIControlEventTouchUpInside];
+    [f addSubview:bak];
     _table.tableFooterView = f;
 
     // close button
@@ -199,6 +230,18 @@ static NSString *raIcon(NSString *k) {
 - (void)translate {
     // HTTranslate listens; it presents the translator on top of this menu
     [NSNotificationCenter.defaultCenter postNotificationName:@"ra.translate" object:self];
+}
+- (void)breakMode {
+    // HTFocus listens; it asks how long and shows the break-mode lock screen
+    [NSNotificationCenter.defaultCenter postNotificationName:@"ra.break" object:self];
+}
+- (void)accent {
+    // HTAccent listens; it presents the color picker on top of this menu
+    [NSNotificationCenter.defaultCenter postNotificationName:@"ra.accent" object:self];
+}
+- (void)backup {
+    // HTBackup listens; it presents the export/import action sheet
+    [NSNotificationCenter.defaultCenter postNotificationName:@"ra.backup" object:self];
 }
 - (NSArray *)groups {
     NSMutableArray *names = [NSMutableArray new];
