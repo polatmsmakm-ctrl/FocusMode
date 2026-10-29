@@ -81,6 +81,7 @@ static NSString *raIcon(NSString *k) {
     if ([k hasPrefix:@"ht.voicelog"]) return @"waveform.circle.fill";
     if ([k hasPrefix:@"ht.widget"]) return @"square.grid.2x2.fill";
     if ([k hasPrefix:@"ht.theme"]) return @"paintbrush.fill";
+    if ([k hasPrefix:@"ht.panel"]) return @"square.grid.3x3.fill";
     return @"sparkles";
 }
 
