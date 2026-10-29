@@ -36,20 +36,25 @@ static UIViewController *raTop(void) {
     return v;
 }
 
-@interface RaMenuVC : UIViewController <UITableViewDataSource, UITableViewDelegate>
-@end
-#ifndef RA_NO_IMPL
-#import "ra_bg.h"
 // HTTheme stores a picked RGB triple here (no "ra." prefix — that's reserved for raOn's boolean
 // toggles); any module can wrap its own hardcoded accent color in this to pick up the active theme,
-// falling back to its original color when no theme is set (idx 0 / nothing picked yet).
+// falling back to its original color when no theme is set (idx 0 / nothing picked yet). Defined
+// here (outside the RA_NO_IMPL guard below) so every module gets its own copy, the same as raOn/
+// raTop — modules compile with -DRA_NO_IMPL in the combined build and can't see anything inside
+// that guard, which is reserved for the much heavier RaMenuVC UI implementation itself.
 static UIColor *raThemeColor(UIColor *fallback) RA_UNUSED;
 static UIColor *raThemeColor(UIColor *fallback) {
     NSArray *c = [NSUserDefaults.standardUserDefaults arrayForKey:@"ht.theme.rgb"];
     if (c.count == 3) return [UIColor colorWithRed:[c[0] doubleValue] green:[c[1] doubleValue] blue:[c[2] doubleValue] alpha:1];
     return fallback;
 }
+static UIColor *raAccent(void) RA_UNUSED;
 static UIColor *raAccent(void) { return raThemeColor([UIColor colorWithRed:0.55 green:0.58 blue:1.0 alpha:1]); }
+
+@interface RaMenuVC : UIViewController <UITableViewDataSource, UITableViewDelegate>
+@end
+#ifndef RA_NO_IMPL
+#import "ra_bg.h"
 static NSString *raIcon(NSString *k) {
     if ([k hasPrefix:@"dl"]) return @"arrow.down.circle.fill";
     if ([k hasPrefix:@"cf"]) return @"questionmark.circle.fill";
