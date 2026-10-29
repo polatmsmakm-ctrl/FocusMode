@@ -3,7 +3,7 @@
 // feature. Rewritten from the original FocusMode.m to use the shared igdHook/Ra Menu pattern
 // (toggle switch instead of always-on, diagnostics line shared with the other modules).
 #import "igd_common.h"
-#define BUILD @"ads3"
+#define BUILD @"ads4"
 
 static NSInteger gHidden;
 
@@ -93,6 +93,6 @@ static void htAdsPollVipPopup(void) {
 __attribute__((constructor)) static void init(void) {
     raRegister(@"الإعلانات", @"ht.ads", @"إخفاء الإعلانات", @"يحجب أي عرض إعلان يرث من BaseADView محلياً فقط — ما يلمس الشبكة ولا يفعّل أي ميزة VIP");
     raRegisterD(@"الإعلانات", @"ht.ads.splash", @"إخفاء إعلان بداية التطبيق", @"يمنع ظهور الإعلان اللي يفتح وقت تشغيل التطبيق قبل الدخول للقائمة الرئيسية — محلياً فقط", YES);
-    raRegisterD(@"الإعلانات", @"ht.ads.vippopup", @"إغلاق نوافذ ترقية VIP", @"يقفل تلقائياً أي نافذة ترويجية لاشتراك VIP (زي عرض \"ترجمة ذكاء اصطناعي غير محدودة\") فور ظهورها — تخمين بالاسم (مو مؤكد 100%)، فيه احتمال ضعيف يقفل شاشة فتحتها إنت بنفسك لو تشابه الاسم. مطفي افتراضياً", NO);
+    raRegisterD(@"الإعلانات", @"ht.ads.vippopup", @"إغلاق نوافذ ترقية VIP", @"يقفل تلقائياً أي نافذة ترويجية لاشتراك VIP (زي عرض \"ترجمة ذكاء اصطناعي غير محدودة\") فور ظهورها — تخمين بالاسم (مو مؤكد 100%)، فيه احتمال ضعيف يقفل شاشة فتحتها إنت بنفسك لو تشابه الاسم", YES);
     igdRun(@"HTAds", BUILD, ^{ hookBaseAD(); hookLaunchAd(); htAdsPollVipPopup(); });
 }
