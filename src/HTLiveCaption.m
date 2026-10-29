@@ -19,7 +19,9 @@
 #import "igd_common.h"
 #import <Speech/Speech.h>
 #import <AVFoundation/AVFoundation.h>
-#define BUILD @"livecaption3"
+#import <ReplayKit/ReplayKit.h>
+#import <CoreMedia/CoreMedia.h>
+#define BUILD @"livecaption4"
 #define HT_LC_FROM_KEY @"ht.livecaption.from"
 #define HT_LC_TO_KEY @"ht.livecaption.to"
 #define HT_LC_SPEECH_KEY_NAME @"NSSpeechRecognitionUsageDescription"
@@ -75,6 +77,39 @@ static void htLCTranslate(NSString *text, NSString *from, NSString *to, HTLCRepl
     [t resume];
 }
 
+// Converts one ReplayKit app-audio CMSampleBuffer into the AVAudioPCMBuffer format
+// SFSpeechAudioBufferRecognitionRequest expects — the standard CoreMedia→AVAudioEngine bridge
+// pattern (read the real ASBD out of the sample buffer's own format description, then copy the
+// PCM bytes into a freshly allocated AVAudioPCMBuffer of that exact format).
+static AVAudioPCMBuffer *htPCMBufferFromSampleBuffer(CMSampleBufferRef sampleBuffer) {
+    CMFormatDescriptionRef formatDesc = CMSampleBufferGetFormatDescription(sampleBuffer);
+    if (!formatDesc) return nil;
+    const AudioStreamBasicDescription *asbd = CMAudioFormatDescriptionGetStreamBasicDescription(formatDesc);
+    if (!asbd) return nil;
+    AVAudioFormat *format = [[AVAudioFormat alloc] initWithStreamDescription:asbd];
+    if (!format) return nil;
+    CMItemCount numSamples = CMSampleBufferGetNumSamples(sampleBuffer);
+    if (numSamples <= 0) return nil;
+    AVAudioPCMBuffer *pcm = [[AVAudioPCMBuffer alloc] initWithPCMFormat:format frameCapacity:(AVAudioFrameCount)numSamples];
+    if (!pcm) return nil;
+    pcm.frameLength = (AVAudioFrameCount)numSamples;
+    CMBlockBufferRef blockBuffer = NULL;
+    AudioBufferList audioBufferList;
+    memset(&audioBufferList, 0, sizeof(audioBufferList));
+    OSStatus st = CMSampleBufferGetAudioBufferListWithRetainedBlockBuffer(sampleBuffer, NULL, &audioBufferList, sizeof(audioBufferList), NULL, NULL, kCMSampleBufferFlag_AudioBufferList_Assure16ByteAlignment, &blockBuffer);
+    if (st != noErr || audioBufferList.mNumberBuffers == 0) { if (blockBuffer) CFRelease(blockBuffer); return nil; }
+    AudioBufferList *dst = pcm.audioBufferList;
+    UInt32 n = MIN(audioBufferList.mNumberBuffers, dst->mNumberBuffers);
+    for (UInt32 i = 0; i < n; i++) {
+        UInt32 bytes = MIN(audioBufferList.mBuffers[i].mDataByteSize, dst->mBuffers[i].mDataByteSize);
+        if (audioBufferList.mBuffers[i].mData && dst->mBuffers[i].mData && bytes > 0) {
+            memcpy(dst->mBuffers[i].mData, audioBufferList.mBuffers[i].mData, bytes);
+        }
+    }
+    if (blockBuffer) CFRelease(blockBuffer);
+    return pcm;
+}
+
 @interface HTLiveCaptionVC : UIViewController <UITextViewDelegate>
 @property (nonatomic, strong) UITextView *hiddenInput;
 @property (nonatomic, strong) UILabel *instruction;
@@ -87,12 +122,22 @@ static void htLCTranslate(NSString *text, NSString *from, NSString *to, HTLCRepl
 @property (nonatomic, strong) NSTimer *idleTimer;
 @property (nonatomic) NSTimeInterval lastChangeTime;
 @property (nonatomic, strong) NSTimer *debounce;
-// easy-path (SFSpeechRecognizer) state
+// easy-path (SFSpeechRecognizer) state — two independent sources:
+//  - mic (micButton, "صوتك"): AVAudioEngine tap on the device mic, same as before — your own voice.
+//  - app audio (theirButton, "صوتهم"): ReplayKit in-app audio capture — the dylib runs embedded
+//    inside HelloTalk's own process, so RPScreenRecorder's "this app's audio" is literally what
+//    HelloTalk is playing, i.e. the Voice Room call audio (other participants), which never passes
+//    through the mic at all. No private classes, no Info.plist change — a public Apple API, gated by
+//    the same speech-recognition permission the mic path already requires.
 @property (nonatomic, strong) UIButton *micButton;
+@property (nonatomic, strong) UIButton *theirButton;
+@property (nonatomic, strong) UIStackView *sourceRow;
 @property (nonatomic) BOOL easyMode;      // becomes YES once the easy path is actually confirmed working
 @property (nonatomic) BOOL listening;
+@property (nonatomic) BOOL usingAppAudio; // YES = "صوتهم" (ReplayKit), NO = "صوتك" (mic)
 @property (nonatomic, strong) SFSpeechRecognizer *recognizer;
 @property (nonatomic, strong) AVAudioEngine *audioEngine;
+@property (nonatomic, strong) RPScreenRecorder *screenRecorder;
 @property (nonatomic, strong) SFSpeechAudioBufferRecognitionRequest *speechRequest;
 @property (nonatomic, strong) SFSpeechRecognitionTask *speechTask;
 @property (nonatomic, copy) NSString *lastPartial;
@@ -128,18 +173,25 @@ static void htLCTranslate(NSString *text, NSString *from, NSString *to, HTLCRepl
     langRow.translatesAutoresizingMaskIntoConstraints = NO;
     [self.view addSubview:langRow];
 
-    self.micButton = [UIButton buttonWithType:UIButtonTypeCustom];
-    self.micButton.bounds = CGRectMake(0, 0, 64, 64);
-    self.micButton.layer.cornerRadius = 32;
-    self.micButton.backgroundColor = [UIColor colorWithRed:0.52 green:0.33 blue:0.92 alpha:0.96];
-    [self.micButton setImage:htSymbolSized(@"mic.fill", @"mic", 26, UIImageSymbolWeightSemibold) forState:UIControlStateNormal];
-    self.micButton.tintColor = UIColor.whiteColor;
-    self.micButton.translatesAutoresizingMaskIntoConstraints = NO;
+    self.micButton = [self sourceButtonWithIcon:@"mic.fill" fallback:@"mic" color:[UIColor colorWithRed:0.52 green:0.33 blue:0.92 alpha:0.96]];
     [self.micButton addTarget:self action:@selector(micTapped) forControlEvents:UIControlEventTouchUpInside];
-    [self.view addSubview:self.micButton];
+    self.theirButton = [self sourceButtonWithIcon:@"person.wave.2.fill" fallback:@"waveform" color:[UIColor colorWithRed:0.14 green:0.58 blue:0.78 alpha:0.96]];
+    [self.theirButton addTarget:self action:@selector(theirTapped) forControlEvents:UIControlEventTouchUpInside];
+
+    UILabel *micLbl = [self sourceLabel:@"صوتك"];
+    UILabel *theirLbl = [self sourceLabel:@"صوتهم"];
+    UIStackView *micCol = [[UIStackView alloc] initWithArrangedSubviews:@[self.micButton, micLbl]];
+    micCol.axis = UILayoutConstraintAxisVertical; micCol.spacing = 6; micCol.alignment = UIStackViewAlignmentCenter;
+    UIStackView *theirCol = [[UIStackView alloc] initWithArrangedSubviews:@[self.theirButton, theirLbl]];
+    theirCol.axis = UILayoutConstraintAxisVertical; theirCol.spacing = 6; theirCol.alignment = UIStackViewAlignmentCenter;
+    UIStackView *sourceRow = [[UIStackView alloc] initWithArrangedSubviews:@[micCol, theirCol]];
+    sourceRow.axis = UILayoutConstraintAxisHorizontal; sourceRow.spacing = 34; sourceRow.alignment = UIStackViewAlignmentCenter;
+    sourceRow.translatesAutoresizingMaskIntoConstraints = NO;
+    [self.view addSubview:sourceRow];
+    self.sourceRow = sourceRow;
 
     self.instruction = [UILabel new];
-    self.instruction.text = @"🎤 اضغط الزر وابدأ الكلام — يترجم ويظهر هنا تلقائياً";
+    self.instruction.text = @"🎤 اختر صوتك أو صوتهم وابدأ — يترجم ويظهر هنا تلقائياً";
     self.instruction.font = [UIFont systemFontOfSize:14 weight:UIFontWeightMedium];
     self.instruction.textColor = [UIColor colorWithWhite:1 alpha:0.6];
     self.instruction.numberOfLines = 0;
@@ -179,10 +231,10 @@ static void htLCTranslate(NSString *text, NSString *from, NSString *to, HTLCRepl
         [langRow.topAnchor constraintEqualToAnchor:safe.topAnchor constant:10],
         [langRow.centerXAnchor constraintEqualToAnchor:self.view.centerXAnchor],
 
-        [self.micButton.topAnchor constraintEqualToAnchor:langRow.bottomAnchor constant:16],
-        [self.micButton.centerXAnchor constraintEqualToAnchor:self.view.centerXAnchor],
+        [self.sourceRow.topAnchor constraintEqualToAnchor:langRow.bottomAnchor constant:16],
+        [self.sourceRow.centerXAnchor constraintEqualToAnchor:self.view.centerXAnchor],
 
-        [self.instruction.topAnchor constraintEqualToAnchor:self.micButton.bottomAnchor constant:10],
+        [self.instruction.topAnchor constraintEqualToAnchor:self.sourceRow.bottomAnchor constant:10],
         [self.instruction.leadingAnchor constraintEqualToAnchor:safe.leadingAnchor constant:28],
         [self.instruction.trailingAnchor constraintEqualToAnchor:safe.trailingAnchor constant:-28],
 
@@ -211,6 +263,25 @@ static void htLCTranslate(NSString *text, NSString *from, NSString *to, HTLCRepl
     [b setTitleColor:UIColor.whiteColor forState:UIControlStateNormal];
     b.titleLabel.font = [UIFont systemFontOfSize:14 weight:UIFontWeightSemibold];
     return b;
+}
+- (UIButton *)sourceButtonWithIcon:(NSString *)icon fallback:(NSString *)fb color:(UIColor *)color {
+    UIButton *b = [UIButton buttonWithType:UIButtonTypeCustom];
+    b.bounds = CGRectMake(0, 0, 60, 60);
+    b.layer.cornerRadius = 30;
+    b.backgroundColor = color;
+    [b setImage:htSymbolSized(icon, fb, 24, UIImageSymbolWeightSemibold) forState:UIControlStateNormal];
+    b.tintColor = UIColor.whiteColor;
+    b.translatesAutoresizingMaskIntoConstraints = NO;
+    [b.widthAnchor constraintEqualToConstant:60].active = YES;
+    [b.heightAnchor constraintEqualToConstant:60].active = YES;
+    return b;
+}
+- (UILabel *)sourceLabel:(NSString *)text {
+    UILabel *l = [UILabel new];
+    l.text = text;
+    l.font = [UIFont systemFontOfSize:12 weight:UIFontWeightSemibold];
+    l.textColor = [UIColor colorWithWhite:1 alpha:0.7];
+    return l;
 }
 - (void)updateLangButtons {
     NSArray *langs = htLCLangs();
@@ -253,7 +324,8 @@ static void htLCTranslate(NSString *text, NSString *from, NSString *to, HTLCRepl
     w.rootViewController = nil;
 }
 - (void)micTapped {
-    if (self.listening) { [self stopListening]; return; }
+    if (self.listening && !self.usingAppAudio) { [self stopListening]; return; }
+    if (self.listening) [self stopListening];
     if (!htSpeechKeyPresent()) {
         NSString *key = [NSString stringWithFormat:@"%@.%@", @"ht.livecaption.easyhint", NSBundle.mainBundle.bundleIdentifier ?: @""];
         if (![NSUserDefaults.standardUserDefaults boolForKey:key]) {
@@ -265,7 +337,16 @@ static void htLCTranslate(NSString *text, NSString *from, NSString *to, HTLCRepl
     }
     [self startEasyListening];
 }
-// ---- EASY path: SFSpeechRecognizer + AVAudioEngine, continuous, one tap to start/stop ----------
+- (void)theirTapped {
+    if (self.listening && self.usingAppAudio) { [self stopListening]; return; }
+    if (self.listening) [self stopListening];
+    if (!htSpeechKeyPresent()) {
+        igdToast(@"صوتهم يحتاج نفس مفتاح Info.plist المطلوب للاستماع المستمر (NSSpeechRecognitionUsageDescription) — ضيفه نفس وقت ما تحط الدايلب، ما فيه طريقة يدوية بديلة لالتقاط صوت الباقين");
+        return;
+    }
+    [self startEasyListeningAppAudio];
+}
+// ---- EASY path 1: "صوتك" — SFSpeechRecognizer + AVAudioEngine mic tap, continuous ----------------
 - (void)startEasyListening {
     [SFSpeechRecognizer requestAuthorization:^(SFSpeechRecognizerAuthorizationStatus status) {
         dispatch_async(dispatch_get_main_queue(), ^{
@@ -315,10 +396,56 @@ static void htLCTranslate(NSString *text, NSString *from, NSString *to, HTLCRepl
         [self startFallbackListening];
         return;
     }
+    self.usingAppAudio = NO;
     self.listening = YES;
     self.easyMode = YES;
     [self updateMicUI];
     [self startOneSpeechTask];
+}
+// ---- EASY path 2: "صوتهم" — ReplayKit in-app audio capture, continuous ---------------------------
+// The dylib is loaded INSIDE the HelloTalk process, so RPScreenRecorder's "this app's audio" tap is
+// literally HelloTalk's own mixed output — the Voice Room call audio (other participants), which
+// never reaches the mic at all. Public Apple API, no private classes, no Info.plist change beyond
+// the same speech-recognition key the mic path already needs. microphoneEnabled stays NO so this
+// never touches/needs mic permission; we only read the RPSampleBufferTypeAudioApp buffers.
+- (void)startEasyListeningAppAudio {
+    [SFSpeechRecognizer requestAuthorization:^(SFSpeechRecognizerAuthorizationStatus status) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            if (status != SFSpeechRecognizerAuthorizationStatusAuthorized) {
+                igdToast(@"ما قدرنا نفعّل صلاحية التعرف على الصوت");
+                return;
+            }
+            [self beginAppAudioSession];
+        });
+    }];
+}
+- (void)beginAppAudioSession {
+    NSArray *langs = htLCLangs();
+    NSString *locale = htLocaleForLangCode(langs[self.fromIdx][0]);
+    self.recognizer = [[SFSpeechRecognizer alloc] initWithLocale:[NSLocale localeWithLocaleIdentifier:locale]];
+    if (!self.recognizer.isAvailable) { igdToast(@"التعرف على الصوت لهالغة مو متوفر بجهازك"); return; }
+    self.screenRecorder = RPScreenRecorder.sharedRecorder;
+    if (!self.screenRecorder.isAvailable) { igdToast(@"تسجيل صوت التطبيق مو متوفر بجهازك الحين"); return; }
+    self.screenRecorder.microphoneEnabled = NO;
+    self.usingAppAudio = YES;
+    self.listening = YES;
+    self.easyMode = YES;
+    [self updateMicUI];
+    [self startOneSpeechTask];
+    __weak typeof(self) weakSelf = self;
+    [self.screenRecorder startCaptureWithHandler:^(CMSampleBufferRef sampleBuffer, RPSampleBufferType bufferType, NSError *error) {
+        if (bufferType != RPSampleBufferTypeAudioApp) return;   // ignore video frames entirely
+        if (!CMSampleBufferDataIsReady(sampleBuffer)) return;
+        AVAudioPCMBuffer *pcm = htPCMBufferFromSampleBuffer(sampleBuffer);
+        if (pcm) [weakSelf.speechRequest appendAudioPCMBuffer:pcm];
+    } completionHandler:^(NSError *error) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            if (error) {
+                igdToast(@"تعذر بدء تسجيل صوت الغرفة — قد يكون النظام رفض صلاحية التسجيل");
+                [weakSelf stopListening];
+            }
+        });
+    }];
 }
 // Apple's recognition task auto-ends after a stretch of silence/final result — this restarts a
 // fresh one immediately for as long as the person has listening turned on, so it feels continuous
@@ -363,22 +490,35 @@ static void htLCTranslate(NSString *text, NSString *from, NSString *to, HTLCRepl
     self.speechTask = nil;
     [self.speechRequest endAudio];
     self.speechRequest = nil;
-    if (self.audioEngine.isRunning) {
-        [self.audioEngine stop];
-        [self.audioEngine.inputNode removeTapOnBus:0];
+    if (self.usingAppAudio) {
+        if (self.screenRecorder.isRecording) {
+            [self.screenRecorder stopCaptureWithHandler:^(NSError *error) {}];
+        }
+        self.screenRecorder = nil;
+    } else {
+        if (self.audioEngine.isRunning) {
+            [self.audioEngine stop];
+            [self.audioEngine.inputNode removeTapOnBus:0];
+        }
+        self.audioEngine = nil;
+        [AVAudioSession.sharedInstance setActive:NO withOptions:AVAudioSessionSetActiveOptionNotifyOthersOnDeactivation error:nil];
     }
-    self.audioEngine = nil;
-    [AVAudioSession.sharedInstance setActive:NO withOptions:AVAudioSessionSetActiveOptionNotifyOthersOnDeactivation error:nil];
+    self.usingAppAudio = NO;
     [self.hiddenInput resignFirstResponder];
     [self updateMicUI];
 }
 - (void)updateMicUI {
-    [self.micButton setImage:htSymbolSized(self.listening ? @"stop.fill" : @"mic.fill", self.listening ? @"stop.fill" : @"mic", 26, UIImageSymbolWeightSemibold) forState:UIControlStateNormal];
-    self.micButton.backgroundColor = self.listening ? [UIColor colorWithRed:0.92 green:0.28 blue:0.33 alpha:0.96] : [UIColor colorWithRed:0.52 green:0.33 blue:0.92 alpha:0.96];
+    BOOL micActive = self.listening && !self.usingAppAudio;
+    BOOL theirActive = self.listening && self.usingAppAudio;
+    [self.micButton setImage:htSymbolSized(micActive ? @"stop.fill" : @"mic.fill", micActive ? @"stop.fill" : @"mic", 24, UIImageSymbolWeightSemibold) forState:UIControlStateNormal];
+    self.micButton.backgroundColor = micActive ? [UIColor colorWithRed:0.92 green:0.28 blue:0.33 alpha:0.96] : [UIColor colorWithRed:0.52 green:0.33 blue:0.92 alpha:0.96];
+    [self.theirButton setImage:htSymbolSized(theirActive ? @"stop.fill" : @"person.wave.2.fill", theirActive ? @"stop.fill" : @"waveform", 24, UIImageSymbolWeightSemibold) forState:UIControlStateNormal];
+    self.theirButton.backgroundColor = theirActive ? [UIColor colorWithRed:0.92 green:0.28 blue:0.33 alpha:0.96] : [UIColor colorWithRed:0.14 green:0.58 blue:0.78 alpha:0.96];
     if (self.listening) {
-        self.instruction.text = self.easyMode ? @"🎧 يسمع الآن باستمرار — اضغط الزر الأحمر لين توقف" : @"🎤 اضغط زر الديكتيشن بلوحة المفاتيح وابدأ الكلام";
+        if (!self.easyMode) self.instruction.text = @"🎤 اضغط زر الديكتيشن بلوحة المفاتيح وابدأ الكلام";
+        else self.instruction.text = self.usingAppAudio ? @"🎧 يسمع صوت الغرفة (الباقين) الآن باستمرار — اضغط الزر الأحمر لين توقف" : @"🎧 يسمع صوتك الآن باستمرار — اضغط الزر الأحمر لين توقف";
     } else {
-        self.instruction.text = htSpeechKeyPresent() ? @"🎤 اضغط الزر وابدأ الكلام — يترجم ويظهر هنا تلقائياً" : @"🎤 اضغط الزر ثم اضغط زر الديكتيشن بلوحة المفاتيح (لتفعيل الاستماع التلقائي المستمر، راجع ملاحظة Info.plist بتفاصيل المشروع)";
+        self.instruction.text = htSpeechKeyPresent() ? @"🎤 اختر صوتك أو صوتهم وابدأ — يترجم ويظهر هنا تلقائياً" : @"🎤 صوتك: اضغط ثم زر الديكتيشن بلوحة المفاتيح. صوتهم يحتاج تفعيل الاستماع المستمر أول (راجع ملاحظة Info.plist بتفاصيل المشروع)";
     }
 }
 - (void)textViewDidChange:(UITextView *)tv {
@@ -509,7 +649,7 @@ static void htInstallLiveCaptionButton(void) {
 }
 
 __attribute__((constructor)) static void init(void) {
-    raRegisterD(@"الإضافات", @"ht.livecaption", @"ترجمة فورية (كابشن)", @"زر ثابت بنفسجي يظهر فقط وأنت داخل Voice Room — بضغطة وحدة يسمع ويترجم باستمرار (يحتاج إضافة مفتاح NSSpeechRecognitionUsageDescription بـ Info.plist مرة وحدة)، وإلا يرجع تلقائياً لطريقة ديكتيشن لوحة المفاتيح", YES);
+    raRegisterD(@"الإضافات", @"ht.livecaption", @"ترجمة فورية (كابشن)", @"زر ثابت بنفسجي يظهر فقط وأنت داخل Voice Room — زرين منفصلين: 🎤 صوتك (المايك) و🔊 صوتهم (صوت الغرفة عبر ReplayKit، بدون مايك)، كلاهما يحتاج إضافة مفتاح NSSpeechRecognitionUsageDescription بـ Info.plist مرة وحدة — وإلا صوتك يرجع تلقائياً لطريقة ديكتيشن لوحة المفاتيح (صوتهم بدون هالمفتاح ما له بديل)", YES);
     igdRun(@"HTLiveCaption", BUILD, ^{
         htInstallLiveCaptionButton();
         [NSNotificationCenter.defaultCenter addObserverForName:@"ra.livecaption" object:nil queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *n) {
