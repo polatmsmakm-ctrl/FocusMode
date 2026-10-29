@@ -20,7 +20,7 @@ jobs:
           mkdir -p build
           SDK=$(xcrun --sdk iphoneos --show-sdk-path)
           : > build/build.log
-          for n in HTFix HTAds HTDict HTSave HTTranslate HTOnline HTSeen HTFocus HTLock HTBackup HTAccent HTReminder HTNotes HTWorldClock HTVocabTools HTPhrases HTLiveCaption HTVoiceLog HTWidget2 HTTheme HTPanel; do
+          for n in HTFix HTAds HTSave HTTurjuman HTOnline HTSeen HTFocus HTLock HTBackup HTAccent HTReminder HTNotes HTWorldClock HTVocabTools HTPhrases HTLiveCaption HTVoiceLog HTWidget2 HTTheme HTPanel; do
             echo "== $n ==" | tee -a build/build.log
             (xcrun --sdk iphoneos clang \
               -arch arm64 -miphoneos-version-min=15.0 -isysroot "$SDK" \
@@ -30,7 +30,7 @@ jobs:
               -o build/$n.dylib src/$n.m && codesign -f -s - build/$n.dylib && echo "OK $n") 2>&1 | tee -a build/build.log
           done
           echo "== FocusMode (all-in-one) ==" | tee -a build/build.log
-          (mkdir -p build/obj && for n in HTFix HTAds HTDict HTSave HTTranslate HTOnline HTSeen HTFocus HTLock HTBackup HTAccent HTReminder HTNotes HTWorldClock HTVocabTools HTPhrases HTLiveCaption HTVoiceLog HTWidget2 HTTheme HTPanel; do
+          (mkdir -p build/obj && for n in HTFix HTAds HTSave HTTurjuman HTOnline HTSeen HTFocus HTLock HTBackup HTAccent HTReminder HTNotes HTWorldClock HTVocabTools HTPhrases HTLiveCaption HTVoiceLog HTWidget2 HTTheme HTPanel; do
              xcrun --sdk iphoneos clang -arch arm64 -miphoneos-version-min=15.0 -isysroot "$SDK" -fobjc-arc -Os -Wall -Wno-deprecated-declarations -DRA_NO_IMPL -c src/$n.m -o build/obj/$n.o || exit 1
            done
            xcrun --sdk iphoneos clang -arch arm64 -miphoneos-version-min=15.0 -isysroot "$SDK" -fobjc-arc -Os -Wno-deprecated-declarations -c src/ra_impl.m -o build/obj/ra_impl.o || exit 1
