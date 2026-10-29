@@ -33,11 +33,10 @@ OK HTVocabTools
 == HTPhrases ==
 OK HTPhrases
 == HTLiveCaption ==
-src/HTLiveCaption.m:101:22: warning: initializing 'AudioBufferList *' (aka 'struct AudioBufferList *') with an expression of type 'const AudioBufferList *' (aka 'const struct AudioBufferList *') discards qualifiers [-Wincompatible-pointer-types-discards-qualifiers]
-  101 |     AudioBufferList *dst = pcm.audioBufferList;
-      |                      ^     ~~~~~~~~~~~~~~~~~~~
-1 warning generated.
-OK HTLiveCaption
+src/HTLiveCaption.m:460:67: error: no visible @interface for 'AVAudioConverter' declares the selector 'convertToBuffer:error:inputBlock:'
+  460 |     AVAudioConverterOutputStatus status = [self.appAudioConverter convertToBuffer:outBuf error:&convErr inputBlock:^AVAudioBuffer * _Nullable(AVAudioPacketCount inNumberOfPackets, AVAudioConverterInputStatus * _Nonnull outStatus) {
+      |                                            ~~~~~~~~~~~~~~~~~~~~~~ ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+1 error generated.
 == HTVoiceLog ==
 OK HTVoiceLog
 == HTWidget2 ==
@@ -51,34 +50,31 @@ src/HTVocabTools.m:162:35: warning: variable 'page' set but not used [-Wunused-b
   162 |         CGFloat y = 40; NSInteger page = 0;
       |                                   ^
 1 warning generated.
-src/HTLiveCaption.m:101:22: warning: initializing 'AudioBufferList *' (aka 'struct AudioBufferList *') with an expression of type 'const AudioBufferList *' (aka 'const struct AudioBufferList *') discards qualifiers [-Wincompatible-pointer-types-discards-qualifiers]
-  101 |     AudioBufferList *dst = pcm.audioBufferList;
-      |                      ^     ~~~~~~~~~~~~~~~~~~~
-1 warning generated.
-OK FocusMode
-total 14224
-drwxr-xr-x  25 runner  staff     800 Oct 29 09:00 .
-drwxr-xr-x   8 runner  staff     256 Oct 29 08:59 ..
--rw-r--r--   1 runner  staff    1816 Oct 29 09:00 build.log
--rwxr-xr-x   1 runner  staff  886768 Oct 29 09:00 FocusMode.dylib
--rwxr-xr-x   1 runner  staff  305424 Oct 29 08:59 HTAccent.dylib
--rwxr-xr-x   1 runner  staff  304336 Oct 29 08:59 HTAds.dylib
--rwxr-xr-x   1 runner  staff  305600 Oct 29 08:59 HTBackup.dylib
--rwxr-xr-x   1 runner  staff  283184 Oct 29 08:59 HTFix.dylib
--rwxr-xr-x   1 runner  staff  327440 Oct 29 08:59 HTFocus.dylib
--rwxr-xr-x   1 runner  staff  356640 Oct 29 08:59 HTLiveCaption.dylib
--rwxr-xr-x   1 runner  staff  305216 Oct 29 08:59 HTLock.dylib
--rwxr-xr-x   1 runner  staff  305216 Oct 29 08:59 HTNotes.dylib
--rwxr-xr-x   1 runner  staff  305824 Oct 29 08:59 HTOnline.dylib
--rwxr-xr-x   1 runner  staff  307888 Oct 29 08:59 HTPanel.dylib
--rwxr-xr-x   1 runner  staff  306176 Oct 29 08:59 HTPhrases.dylib
--rwxr-xr-x   1 runner  staff  287488 Oct 29 08:59 HTReminder.dylib
--rwxr-xr-x   1 runner  staff  305456 Oct 29 08:59 HTSave.dylib
--rwxr-xr-x   1 runner  staff  305072 Oct 29 08:59 HTSeen.dylib
--rwxr-xr-x   1 runner  staff  305104 Oct 29 08:59 HTTheme.dylib
--rwxr-xr-x   1 runner  staff  410640 Oct 29 08:59 HTTurjuman.dylib
--rwxr-xr-x   1 runner  staff  327840 Oct 29 08:59 HTVocabTools.dylib
--rwxr-xr-x   1 runner  staff  340768 Oct 29 08:59 HTVoiceLog.dylib
--rwxr-xr-x   1 runner  staff  339296 Oct 29 08:59 HTWidget2.dylib
--rwxr-xr-x   1 runner  staff  309328 Oct 29 08:59 HTWorldClock.dylib
-drwxr-xr-x  23 runner  staff     736 Oct 29 09:00 obj
+src/HTLiveCaption.m:460:67: error: no visible @interface for 'AVAudioConverter' declares the selector 'convertToBuffer:error:inputBlock:'
+  460 |     AVAudioConverterOutputStatus status = [self.appAudioConverter convertToBuffer:outBuf error:&convErr inputBlock:^AVAudioBuffer * _Nullable(AVAudioPacketCount inNumberOfPackets, AVAudioConverterInputStatus * _Nonnull outStatus) {
+      |                                            ~~~~~~~~~~~~~~~~~~~~~~ ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+1 error generated.
+total 11784
+drwxr-xr-x  23 runner  staff     736 Oct 29 09:15 .
+drwxr-xr-x   8 runner  staff     256 Oct 29 09:15 ..
+-rw-r--r--   1 runner  staff    2030 Oct 29 09:15 build.log
+-rwxr-xr-x   1 runner  staff  305424 Oct 29 09:15 HTAccent.dylib
+-rwxr-xr-x   1 runner  staff  304336 Oct 29 09:15 HTAds.dylib
+-rwxr-xr-x   1 runner  staff  305600 Oct 29 09:15 HTBackup.dylib
+-rwxr-xr-x   1 runner  staff  283184 Oct 29 09:15 HTFix.dylib
+-rwxr-xr-x   1 runner  staff  327440 Oct 29 09:15 HTFocus.dylib
+-rwxr-xr-x   1 runner  staff  305216 Oct 29 09:15 HTLock.dylib
+-rwxr-xr-x   1 runner  staff  305216 Oct 29 09:15 HTNotes.dylib
+-rwxr-xr-x   1 runner  staff  305824 Oct 29 09:15 HTOnline.dylib
+-rwxr-xr-x   1 runner  staff  307888 Oct 29 09:15 HTPanel.dylib
+-rwxr-xr-x   1 runner  staff  306176 Oct 29 09:15 HTPhrases.dylib
+-rwxr-xr-x   1 runner  staff  287488 Oct 29 09:15 HTReminder.dylib
+-rwxr-xr-x   1 runner  staff  305456 Oct 29 09:15 HTSave.dylib
+-rwxr-xr-x   1 runner  staff  305072 Oct 29 09:15 HTSeen.dylib
+-rwxr-xr-x   1 runner  staff  305104 Oct 29 09:15 HTTheme.dylib
+-rwxr-xr-x   1 runner  staff  410640 Oct 29 09:15 HTTurjuman.dylib
+-rwxr-xr-x   1 runner  staff  327840 Oct 29 09:15 HTVocabTools.dylib
+-rwxr-xr-x   1 runner  staff  340768 Oct 29 09:15 HTVoiceLog.dylib
+-rwxr-xr-x   1 runner  staff  339296 Oct 29 09:15 HTWidget2.dylib
+-rwxr-xr-x   1 runner  staff  309328 Oct 29 09:15 HTWorldClock.dylib
+drwxr-xr-x  17 runner  staff     544 Oct 29 09:15 obj
