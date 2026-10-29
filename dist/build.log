@@ -5,11 +5,7 @@ OK HTAds
 == HTSave ==
 OK HTSave
 == HTTurjuman ==
-src/HTTurjuman.m:181:78: error: property follows Cocoa naming convention for returning 'owned' objects
-  181 | @property (nonatomic, strong) UIButton *fromBtn, *toBtn, *goBtn, *speakBtn, *copyOutBtn;
-      |                                                                              ^
-src/HTTurjuman.m:181:78: note: explicitly declare getter '-copyOutBtn' with '__attribute__((objc_method_family(none)))' to return an 'unowned' object
-1 error generated.
+OK HTTurjuman
 == HTOnline ==
 OK HTOnline
 == HTSeen ==
@@ -51,32 +47,38 @@ OK HTTheme
 == HTPanel ==
 OK HTPanel
 == FocusMode (all-in-one) ==
-src/HTTurjuman.m:181:78: error: property follows Cocoa naming convention for returning 'owned' objects
-  181 | @property (nonatomic, strong) UIButton *fromBtn, *toBtn, *goBtn, *speakBtn, *copyOutBtn;
-      |                                                                              ^
-src/HTTurjuman.m:181:78: note: explicitly declare getter '-copyOutBtn' with '__attribute__((objc_method_family(none)))' to return an 'unowned' object
-1 error generated.
-total 11680
-drwxr-xr-x  23 runner  staff     736 Oct 29 08:58 .
-drwxr-xr-x   8 runner  staff     256 Oct 29 08:58 ..
--rw-r--r--   1 runner  staff    2089 Oct 29 08:58 build.log
--rwxr-xr-x   1 runner  staff  305424 Oct 29 08:58 HTAccent.dylib
--rwxr-xr-x   1 runner  staff  304336 Oct 29 08:58 HTAds.dylib
--rwxr-xr-x   1 runner  staff  305600 Oct 29 08:58 HTBackup.dylib
--rwxr-xr-x   1 runner  staff  283184 Oct 29 08:58 HTFix.dylib
--rwxr-xr-x   1 runner  staff  327440 Oct 29 08:58 HTFocus.dylib
--rwxr-xr-x   1 runner  staff  356640 Oct 29 08:58 HTLiveCaption.dylib
--rwxr-xr-x   1 runner  staff  305216 Oct 29 08:58 HTLock.dylib
--rwxr-xr-x   1 runner  staff  305216 Oct 29 08:58 HTNotes.dylib
--rwxr-xr-x   1 runner  staff  305824 Oct 29 08:58 HTOnline.dylib
--rwxr-xr-x   1 runner  staff  307888 Oct 29 08:58 HTPanel.dylib
--rwxr-xr-x   1 runner  staff  306176 Oct 29 08:58 HTPhrases.dylib
--rwxr-xr-x   1 runner  staff  287488 Oct 29 08:58 HTReminder.dylib
--rwxr-xr-x   1 runner  staff  305456 Oct 29 08:58 HTSave.dylib
--rwxr-xr-x   1 runner  staff  305072 Oct 29 08:58 HTSeen.dylib
--rwxr-xr-x   1 runner  staff  305104 Oct 29 08:58 HTTheme.dylib
--rwxr-xr-x   1 runner  staff  327840 Oct 29 08:58 HTVocabTools.dylib
--rwxr-xr-x   1 runner  staff  340768 Oct 29 08:58 HTVoiceLog.dylib
--rwxr-xr-x   1 runner  staff  339296 Oct 29 08:58 HTWidget2.dylib
--rwxr-xr-x   1 runner  staff  309328 Oct 29 08:58 HTWorldClock.dylib
-drwxr-xr-x   5 runner  staff     160 Oct 29 08:58 obj
+src/HTVocabTools.m:162:35: warning: variable 'page' set but not used [-Wunused-but-set-variable]
+  162 |         CGFloat y = 40; NSInteger page = 0;
+      |                                   ^
+1 warning generated.
+src/HTLiveCaption.m:101:22: warning: initializing 'AudioBufferList *' (aka 'struct AudioBufferList *') with an expression of type 'const AudioBufferList *' (aka 'const struct AudioBufferList *') discards qualifiers [-Wincompatible-pointer-types-discards-qualifiers]
+  101 |     AudioBufferList *dst = pcm.audioBufferList;
+      |                      ^     ~~~~~~~~~~~~~~~~~~~
+1 warning generated.
+OK FocusMode
+total 14224
+drwxr-xr-x  25 runner  staff     800 Oct 29 09:00 .
+drwxr-xr-x   8 runner  staff     256 Oct 29 08:59 ..
+-rw-r--r--   1 runner  staff    1816 Oct 29 09:00 build.log
+-rwxr-xr-x   1 runner  staff  886768 Oct 29 09:00 FocusMode.dylib
+-rwxr-xr-x   1 runner  staff  305424 Oct 29 08:59 HTAccent.dylib
+-rwxr-xr-x   1 runner  staff  304336 Oct 29 08:59 HTAds.dylib
+-rwxr-xr-x   1 runner  staff  305600 Oct 29 08:59 HTBackup.dylib
+-rwxr-xr-x   1 runner  staff  283184 Oct 29 08:59 HTFix.dylib
+-rwxr-xr-x   1 runner  staff  327440 Oct 29 08:59 HTFocus.dylib
+-rwxr-xr-x   1 runner  staff  356640 Oct 29 08:59 HTLiveCaption.dylib
+-rwxr-xr-x   1 runner  staff  305216 Oct 29 08:59 HTLock.dylib
+-rwxr-xr-x   1 runner  staff  305216 Oct 29 08:59 HTNotes.dylib
+-rwxr-xr-x   1 runner  staff  305824 Oct 29 08:59 HTOnline.dylib
+-rwxr-xr-x   1 runner  staff  307888 Oct 29 08:59 HTPanel.dylib
+-rwxr-xr-x   1 runner  staff  306176 Oct 29 08:59 HTPhrases.dylib
+-rwxr-xr-x   1 runner  staff  287488 Oct 29 08:59 HTReminder.dylib
+-rwxr-xr-x   1 runner  staff  305456 Oct 29 08:59 HTSave.dylib
+-rwxr-xr-x   1 runner  staff  305072 Oct 29 08:59 HTSeen.dylib
+-rwxr-xr-x   1 runner  staff  305104 Oct 29 08:59 HTTheme.dylib
+-rwxr-xr-x   1 runner  staff  410640 Oct 29 08:59 HTTurjuman.dylib
+-rwxr-xr-x   1 runner  staff  327840 Oct 29 08:59 HTVocabTools.dylib
+-rwxr-xr-x   1 runner  staff  340768 Oct 29 08:59 HTVoiceLog.dylib
+-rwxr-xr-x   1 runner  staff  339296 Oct 29 08:59 HTWidget2.dylib
+-rwxr-xr-x   1 runner  staff  309328 Oct 29 08:59 HTWorldClock.dylib
+drwxr-xr-x  23 runner  staff     736 Oct 29 09:00 obj
