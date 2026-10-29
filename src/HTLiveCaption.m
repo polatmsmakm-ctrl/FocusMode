@@ -21,7 +21,7 @@
 #import <AVFoundation/AVFoundation.h>
 #import <ReplayKit/ReplayKit.h>
 #import <CoreMedia/CoreMedia.h>
-#define BUILD @"livecaption5"
+#define BUILD @"livecaption6"
 #define HT_LC_FROM_KEY @"ht.livecaption.from"
 #define HT_LC_TO_KEY @"ht.livecaption.to"
 #define HT_LC_SPEECH_KEY_NAME @"NSSpeechRecognitionUsageDescription"
@@ -457,7 +457,7 @@ static AVAudioFormat *htLCCanonicalAppAudioFormat(void) {
     if (!outBuf) return nil;
     __block BOOL fed = NO;
     NSError *convErr = nil;
-    AVAudioConverterOutputStatus status = [self.appAudioConverter convertToBuffer:outBuf error:&convErr inputBlock:^AVAudioBuffer * _Nullable(AVAudioPacketCount inNumberOfPackets, AVAudioConverterInputStatus * _Nonnull outStatus) {
+    AVAudioConverterOutputStatus status = [self.appAudioConverter convertToBuffer:outBuf error:&convErr withInputFromBlock:^AVAudioBuffer * _Nullable(AVAudioPacketCount inNumberOfPackets, AVAudioConverterInputStatus * _Nonnull outStatus) {
         if (fed) { *outStatus = AVAudioConverterInputStatus_NoDataNow; return nil; }
         fed = YES;
         *outStatus = AVAudioConverterInputStatus_HaveData;
