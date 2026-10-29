@@ -14,7 +14,7 @@
 #import "ht_bg.h"
 #import <AVFoundation/AVFoundation.h>
 #import <ctype.h>
-#define BUILD @"turjuman1"
+#define BUILD @"turjuman2"
 
 #define HT_TR_FROM_KEY @"ht.translate.from"
 #define HT_TR_TO_KEY @"ht.translate.to"
@@ -178,7 +178,7 @@ static NSString *htMWAudioURL(NSString *audio) {
 @property (nonatomic, strong) UIView *deeplBanner;
 @property (nonatomic, strong) UITextView *input;
 @property (nonatomic, strong) UILabel *placeholder, *charCount;
-@property (nonatomic, strong) UIButton *fromBtn, *toBtn, *goBtn, *speakBtn, *copyBtn;
+@property (nonatomic, strong) UIButton *fromBtn, *toBtn, *goBtn, *speakBtn, *copyOutBtn;
 @property (nonatomic, strong) UIView *outBox;
 @property (nonatomic, strong) UILabel *output;
 @property (nonatomic, strong) UIActivityIndicatorView *trSpinner;
@@ -359,10 +359,10 @@ static NSString *htMWAudioURL(NSString *audio) {
     [self.speakBtn addTarget:self action:@selector(speak) forControlEvents:UIControlEventTouchUpInside];
     self.speakBtn.translatesAutoresizingMaskIntoConstraints = NO;
 
-    self.copyBtn = [UIButton buttonWithType:UIButtonTypeSystem];
-    [self.copyBtn setImage:htSymbol(@"doc.on.doc", @"doc.on.doc.fill") forState:UIControlStateNormal];
-    [self.copyBtn addTarget:self action:@selector(copyOutput) forControlEvents:UIControlEventTouchUpInside];
-    self.copyBtn.translatesAutoresizingMaskIntoConstraints = NO;
+    self.copyOutBtn = [UIButton buttonWithType:UIButtonTypeSystem];
+    [self.copyOutBtn setImage:htSymbol(@"doc.on.doc", @"doc.on.doc.fill") forState:UIControlStateNormal];
+    [self.copyOutBtn addTarget:self action:@selector(copyOutput) forControlEvents:UIControlEventTouchUpInside];
+    self.copyOutBtn.translatesAutoresizingMaskIntoConstraints = NO;
 
     self.outBox = [UIView new];
     self.outBox.layer.cornerRadius = 12;
@@ -370,7 +370,7 @@ static NSString *htMWAudioURL(NSString *audio) {
     self.outBox.translatesAutoresizingMaskIntoConstraints = NO;
     [self.outBox addSubview:self.output];
     [self.outBox addSubview:self.speakBtn];
-    [self.outBox addSubview:self.copyBtn];
+    [self.outBox addSubview:self.copyOutBtn];
     [self.translatePane addSubview:self.outBox];
 
     UILayoutGuide *safe = self.view.safeAreaLayoutGuide;
@@ -417,10 +417,10 @@ static NSString *htMWAudioURL(NSString *audio) {
         [self.speakBtn.widthAnchor constraintEqualToConstant:32],
         [self.speakBtn.heightAnchor constraintEqualToConstant:32],
 
-        [self.copyBtn.centerYAnchor constraintEqualToAnchor:self.speakBtn.centerYAnchor],
-        [self.copyBtn.trailingAnchor constraintEqualToAnchor:self.speakBtn.leadingAnchor constant:-4],
-        [self.copyBtn.widthAnchor constraintEqualToConstant:32],
-        [self.copyBtn.heightAnchor constraintEqualToConstant:32],
+        [self.copyOutBtn.centerYAnchor constraintEqualToAnchor:self.speakBtn.centerYAnchor],
+        [self.copyOutBtn.trailingAnchor constraintEqualToAnchor:self.speakBtn.leadingAnchor constant:-4],
+        [self.copyOutBtn.widthAnchor constraintEqualToConstant:32],
+        [self.copyOutBtn.heightAnchor constraintEqualToConstant:32],
     ]];
 }
 - (UIView *)keyBannerWithText:(NSString *)text action:(SEL)sel {
