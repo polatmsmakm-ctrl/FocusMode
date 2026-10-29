@@ -488,8 +488,9 @@ static void htInstallLiveCaptionButton(void) {
             btn.layer.cornerRadius = 23;
             btn.clipsToBounds = YES;
             // HelloTalk's own voice-room theme is purple — matching it (instead of a clashing
-            // color) makes this read as part of the room's UI while still standing out as new
-            btn.backgroundColor = [UIColor colorWithRed:0.52 green:0.33 blue:0.92 alpha:0.96];
+            // color) makes this read as part of the room's UI while still standing out as new;
+            // a picked HTTheme color overrides this default
+            btn.backgroundColor = raThemeColor([UIColor colorWithRed:0.52 green:0.33 blue:0.92 alpha:0.96]);
             [btn setImage:htSymbolSized(@"captions.bubble.fill", @"text.bubble.fill", 19, UIImageSymbolWeightSemibold) forState:UIControlStateNormal];
             btn.tintColor = UIColor.whiteColor;
             btn.layer.borderWidth = 1.2;

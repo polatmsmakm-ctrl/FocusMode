@@ -128,7 +128,7 @@ static void htInstallPhrasesButton(void) {
             btn.bounds = CGRectMake(0, 0, 48, 48);
             btn.layer.cornerRadius = 24;
             btn.clipsToBounds = YES;
-            btn.backgroundColor = [UIColor colorWithRed:0.15 green:0.55 blue:0.5 alpha:0.92];
+            btn.backgroundColor = raThemeColor([UIColor colorWithRed:0.15 green:0.55 blue:0.5 alpha:0.92]);
             [btn setImage:htSymbolSized(@"text.bubble.fill", @"bubble.left.fill", 19, UIImageSymbolWeightSemibold) forState:UIControlStateNormal];
             btn.tintColor = UIColor.whiteColor;
             btn.layer.borderWidth = 1.2;

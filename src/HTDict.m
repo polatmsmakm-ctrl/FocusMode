@@ -607,7 +607,7 @@ static void htInstallDictButton(void) {
             btn.bounds = CGRectMake(0, 0, 50, 50);
             btn.layer.cornerRadius = 25;
             btn.clipsToBounds = YES;
-            btn.backgroundColor = [UIColor colorWithRed:0.25 green:0.2 blue:0.6 alpha:0.92];
+            btn.backgroundColor = raThemeColor([UIColor colorWithRed:0.25 green:0.2 blue:0.6 alpha:0.92]);
             [btn setImage:htSymbolSized(@"character.book.closed.fill", @"book.closed.fill", 21, UIImageSymbolWeightSemibold) forState:UIControlStateNormal];
             btn.tintColor = UIColor.whiteColor;
             btn.layer.borderWidth = 1.2;

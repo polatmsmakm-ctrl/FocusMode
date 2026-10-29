@@ -40,7 +40,16 @@ static UIViewController *raTop(void) {
 @end
 #ifndef RA_NO_IMPL
 #import "ra_bg.h"
-static UIColor *raAccent(void) { return [UIColor colorWithRed:0.55 green:0.58 blue:1.0 alpha:1]; }
+// HTTheme stores a picked RGB triple here (no "ra." prefix — that's reserved for raOn's boolean
+// toggles); any module can wrap its own hardcoded accent color in this to pick up the active theme,
+// falling back to its original color when no theme is set (idx 0 / nothing picked yet).
+static UIColor *raThemeColor(UIColor *fallback) RA_UNUSED;
+static UIColor *raThemeColor(UIColor *fallback) {
+    NSArray *c = [NSUserDefaults.standardUserDefaults arrayForKey:@"ht.theme.rgb"];
+    if (c.count == 3) return [UIColor colorWithRed:[c[0] doubleValue] green:[c[1] doubleValue] blue:[c[2] doubleValue] alpha:1];
+    return fallback;
+}
+static UIColor *raAccent(void) { return raThemeColor([UIColor colorWithRed:0.55 green:0.58 blue:1.0 alpha:1]); }
 static NSString *raIcon(NSString *k) {
     if ([k hasPrefix:@"dl"]) return @"arrow.down.circle.fill";
     if ([k hasPrefix:@"cf"]) return @"questionmark.circle.fill";
@@ -64,6 +73,9 @@ static NSString *raIcon(NSString *k) {
     if ([k hasPrefix:@"ht.reminder"]) return @"bell.badge.fill";
     if ([k hasPrefix:@"ht.phrases"]) return @"text.bubble.fill";
     if ([k hasPrefix:@"ht.livecaption"]) return @"captions.bubble.fill";
+    if ([k hasPrefix:@"ht.voicelog"]) return @"waveform.circle.fill";
+    if ([k hasPrefix:@"ht.widget"]) return @"square.grid.2x2.fill";
+    if ([k hasPrefix:@"ht.theme"]) return @"paintbrush.fill";
     return @"sparkles";
 }
 
@@ -129,7 +141,7 @@ static NSString *raIcon(NSString *k) {
     _table.tableHeaderView = h;
 
     // footer: credit
-    UIView *f = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 100, 562)];
+    UIView *f = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 100, 688)];
     UIView *line = [[UIView alloc] initWithFrame:CGRectMake(0, 22, 60, 1)];
     line.backgroundColor = [UIColor colorWithWhite:1 alpha:0.25];
     line.autoresizingMask = UIViewAutoresizingFlexibleLeftMargin | UIViewAutoresizingFlexibleRightMargin;
@@ -241,6 +253,33 @@ static NSString *raIcon(NSString *k) {
     lc.titleLabel.font = [UIFont systemFontOfSize:13 weight:UIFontWeightMedium];
     [lc addTarget:self action:@selector(livecaption) forControlEvents:UIControlEventTouchUpInside];
     [f addSubview:lc];
+    UIButton *vl = [UIButton buttonWithType:UIButtonTypeCustom];
+    vl.bounds = CGRectMake(0, 0, 170, 34);
+    vl.center = CGPointMake(50, 554);
+    vl.layer.cornerRadius = 17;
+    vl.backgroundColor = [UIColor colorWithWhite:1 alpha:0.14];
+    [vl setTitle:@"📞 سجل غرف الصوت" forState:UIControlStateNormal];
+    vl.titleLabel.font = [UIFont systemFontOfSize:13 weight:UIFontWeightMedium];
+    [vl addTarget:self action:@selector(voicelog) forControlEvents:UIControlEventTouchUpInside];
+    [f addSubview:vl];
+    UIButton *wd = [UIButton buttonWithType:UIButtonTypeCustom];
+    wd.bounds = CGRectMake(0, 0, 170, 34);
+    wd.center = CGPointMake(50, 596);
+    wd.layer.cornerRadius = 17;
+    wd.backgroundColor = [UIColor colorWithWhite:1 alpha:0.14];
+    [wd setTitle:@"📊 اليوم بنظرة" forState:UIControlStateNormal];
+    wd.titleLabel.font = [UIFont systemFontOfSize:13 weight:UIFontWeightMedium];
+    [wd addTarget:self action:@selector(widget) forControlEvents:UIControlEventTouchUpInside];
+    [f addSubview:wd];
+    UIButton *th = [UIButton buttonWithType:UIButtonTypeCustom];
+    th.bounds = CGRectMake(0, 0, 170, 34);
+    th.center = CGPointMake(50, 638);
+    th.layer.cornerRadius = 17;
+    th.backgroundColor = [UIColor colorWithWhite:1 alpha:0.14];
+    [th setTitle:@"🌈 الثيم" forState:UIControlStateNormal];
+    th.titleLabel.font = [UIFont systemFontOfSize:13 weight:UIFontWeightMedium];
+    [th addTarget:self action:@selector(theme) forControlEvents:UIControlEventTouchUpInside];
+    [f addSubview:th];
     _table.tableFooterView = f;
 
     // close button
@@ -312,6 +351,18 @@ static NSString *raIcon(NSString *k) {
     // HTLiveCaption listens; it opens its own full-screen overlay window above everything,
     // including this menu, so no need to dismiss ourselves first
     [NSNotificationCenter.defaultCenter postNotificationName:@"ra.livecaption" object:self];
+}
+- (void)voicelog {
+    // HTVoiceLog listens; it presents the voice-room time history on top of this menu
+    [NSNotificationCenter.defaultCenter postNotificationName:@"ra.voicelog" object:self];
+}
+- (void)widget {
+    // HTWidget2 listens; it presents the "اليوم بنظرة" stats dashboard on top of this menu
+    [NSNotificationCenter.defaultCenter postNotificationName:@"ra.widget" object:self];
+}
+- (void)theme {
+    // HTTheme listens; it presents the full theme picker on top of this menu
+    [NSNotificationCenter.defaultCenter postNotificationName:@"ra.theme" object:self];
 }
 - (NSArray *)groups {
     NSMutableArray *names = [NSMutableArray new];
@@ -428,7 +479,7 @@ static void raInstallLogo(void) {
             btn.imageView.contentMode = UIViewContentModeScaleAspectFill;
             [btn setImage:im forState:UIControlStateNormal];
             btn.layer.borderWidth = 1.2;
-            btn.layer.borderColor = [UIColor colorWithRed:1 green:0.55 blue:0.8 alpha:0.9].CGColor;
+            btn.layer.borderColor = raThemeColor([UIColor colorWithRed:1 green:0.55 blue:0.8 alpha:0.9]).CGColor;
             btn.accessibilityIdentifier = @"ra.logo";
             [btn addTarget:[RaOpener class] action:@selector(open:) forControlEvents:UIControlEventTouchUpInside];
             [btn addGestureRecognizer:[[UIPanGestureRecognizer alloc] initWithTarget:[RaOpener class] action:@selector(pan:)]];
