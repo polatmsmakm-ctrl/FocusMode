@@ -43,37 +43,34 @@ OK HTWidget2
 == HTTheme ==
 OK HTTheme
 == FocusMode (all-in-one) ==
-In file included from src/HTFix.m:6:
-In file included from src/igd_common.h:5:
-src/ra_menu.h:482:37: error: call to undeclared function 'raThemeColor'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
-  482 |             btn.layer.borderColor = raThemeColor([UIColor colorWithRed:1 green:0.55 blue:0.8 alpha:0.9]).CGColor;
-      |                                     ^
-src/ra_menu.h:482:105: error: member reference base type 'int' is not a structure or union
-  482 |             btn.layer.borderColor = raThemeColor([UIColor colorWithRed:1 green:0.55 blue:0.8 alpha:0.9]).CGColor;
-      |                                     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~~
-2 errors generated.
-total 12584
-drwxr-xr-x  24 runner  staff     768 Oct 29 08:01 .
-drwxr-xr-x   8 runner  staff     256 Oct 29 08:00 ..
--rw-r--r--   1 runner  staff    1565 Oct 29 08:01 build.log
--rwxr-xr-x   1 runner  staff  305424 Oct 29 08:00 HTAccent.dylib
--rwxr-xr-x   1 runner  staff  303760 Oct 29 08:00 HTAds.dylib
--rwxr-xr-x   1 runner  staff  305600 Oct 29 08:00 HTBackup.dylib
--rwxr-xr-x   1 runner  staff  384800 Oct 29 08:00 HTDict.dylib
--rwxr-xr-x   1 runner  staff  283184 Oct 29 08:00 HTFix.dylib
--rwxr-xr-x   1 runner  staff  327440 Oct 29 08:00 HTFocus.dylib
--rwxr-xr-x   1 runner  staff  352624 Oct 29 08:00 HTLiveCaption.dylib
--rwxr-xr-x   1 runner  staff  305216 Oct 29 08:00 HTLock.dylib
--rwxr-xr-x   1 runner  staff  305216 Oct 29 08:00 HTNotes.dylib
--rwxr-xr-x   1 runner  staff  305824 Oct 29 08:00 HTOnline.dylib
--rwxr-xr-x   1 runner  staff  306176 Oct 29 08:00 HTPhrases.dylib
--rwxr-xr-x   1 runner  staff  287488 Oct 29 08:00 HTReminder.dylib
--rwxr-xr-x   1 runner  staff  305456 Oct 29 08:00 HTSave.dylib
--rwxr-xr-x   1 runner  staff  305072 Oct 29 08:00 HTSeen.dylib
--rwxr-xr-x   1 runner  staff  305104 Oct 29 08:01 HTTheme.dylib
--rwxr-xr-x   1 runner  staff  391488 Oct 29 08:00 HTTranslate.dylib
--rwxr-xr-x   1 runner  staff  327840 Oct 29 08:00 HTVocabTools.dylib
--rwxr-xr-x   1 runner  staff  340768 Oct 29 08:00 HTVoiceLog.dylib
--rwxr-xr-x   1 runner  staff  339296 Oct 29 08:01 HTWidget2.dylib
--rwxr-xr-x   1 runner  staff  309328 Oct 29 08:00 HTWorldClock.dylib
-drwxr-xr-x   2 runner  staff      64 Oct 29 08:01 obj
+src/HTVocabTools.m:162:35: warning: variable 'page' set but not used [-Wunused-but-set-variable]
+  162 |         CGFloat y = 40; NSInteger page = 0;
+      |                                   ^
+1 warning generated.
+OK FocusMode
+total 14320
+drwxr-xr-x  25 runner  staff     800 Oct 29 08:03 .
+drwxr-xr-x   8 runner  staff     256 Oct 29 08:02 ..
+-rw-r--r--   1 runner  staff    1020 Oct 29 08:03 build.log
+-rwxr-xr-x   1 runner  staff  888192 Oct 29 08:03 FocusMode.dylib
+-rwxr-xr-x   1 runner  staff  305424 Oct 29 08:02 HTAccent.dylib
+-rwxr-xr-x   1 runner  staff  303760 Oct 29 08:02 HTAds.dylib
+-rwxr-xr-x   1 runner  staff  305600 Oct 29 08:02 HTBackup.dylib
+-rwxr-xr-x   1 runner  staff  384800 Oct 29 08:02 HTDict.dylib
+-rwxr-xr-x   1 runner  staff  283184 Oct 29 08:02 HTFix.dylib
+-rwxr-xr-x   1 runner  staff  327440 Oct 29 08:02 HTFocus.dylib
+-rwxr-xr-x   1 runner  staff  352624 Oct 29 08:02 HTLiveCaption.dylib
+-rwxr-xr-x   1 runner  staff  305216 Oct 29 08:02 HTLock.dylib
+-rwxr-xr-x   1 runner  staff  305216 Oct 29 08:02 HTNotes.dylib
+-rwxr-xr-x   1 runner  staff  305824 Oct 29 08:02 HTOnline.dylib
+-rwxr-xr-x   1 runner  staff  306176 Oct 29 08:02 HTPhrases.dylib
+-rwxr-xr-x   1 runner  staff  287488 Oct 29 08:02 HTReminder.dylib
+-rwxr-xr-x   1 runner  staff  305456 Oct 29 08:02 HTSave.dylib
+-rwxr-xr-x   1 runner  staff  305072 Oct 29 08:02 HTSeen.dylib
+-rwxr-xr-x   1 runner  staff  305104 Oct 29 08:02 HTTheme.dylib
+-rwxr-xr-x   1 runner  staff  391488 Oct 29 08:02 HTTranslate.dylib
+-rwxr-xr-x   1 runner  staff  327840 Oct 29 08:02 HTVocabTools.dylib
+-rwxr-xr-x   1 runner  staff  340768 Oct 29 08:02 HTVoiceLog.dylib
+-rwxr-xr-x   1 runner  staff  339296 Oct 29 08:02 HTWidget2.dylib
+-rwxr-xr-x   1 runner  staff  309328 Oct 29 08:02 HTWorldClock.dylib
+drwxr-xr-x  23 runner  staff     736 Oct 29 08:02 obj
