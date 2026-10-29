@@ -35,6 +35,10 @@ OK HTVocabTools
 == HTPhrases ==
 OK HTPhrases
 == HTLiveCaption ==
+src/HTLiveCaption.m:101:22: warning: initializing 'AudioBufferList *' (aka 'struct AudioBufferList *') with an expression of type 'const AudioBufferList *' (aka 'const struct AudioBufferList *') discards qualifiers [-Wincompatible-pointer-types-discards-qualifiers]
+  101 |     AudioBufferList *dst = pcm.audioBufferList;
+      |                      ^     ~~~~~~~~~~~~~~~~~~~
+1 warning generated.
 OK HTLiveCaption
 == HTVoiceLog ==
 OK HTVoiceLog
@@ -49,31 +53,35 @@ src/HTVocabTools.m:162:35: warning: variable 'page' set but not used [-Wunused-b
   162 |         CGFloat y = 40; NSInteger page = 0;
       |                                   ^
 1 warning generated.
+src/HTLiveCaption.m:101:22: warning: initializing 'AudioBufferList *' (aka 'struct AudioBufferList *') with an expression of type 'const AudioBufferList *' (aka 'const struct AudioBufferList *') discards qualifiers [-Wincompatible-pointer-types-discards-qualifiers]
+  101 |     AudioBufferList *dst = pcm.audioBufferList;
+      |                      ^     ~~~~~~~~~~~~~~~~~~~
+1 warning generated.
 OK FocusMode
-total 14968
-drwxr-xr-x  26 runner  staff     832 Oct 29 08:11 .
-drwxr-xr-x   8 runner  staff     256 Oct 29 08:10 ..
--rw-r--r--   1 runner  staff    1045 Oct 29 08:11 build.log
--rwxr-xr-x   1 runner  staff  909248 Oct 29 08:11 FocusMode.dylib
--rwxr-xr-x   1 runner  staff  305424 Oct 29 08:11 HTAccent.dylib
--rwxr-xr-x   1 runner  staff  303760 Oct 29 08:10 HTAds.dylib
--rwxr-xr-x   1 runner  staff  305600 Oct 29 08:11 HTBackup.dylib
--rwxr-xr-x   1 runner  staff  384800 Oct 29 08:10 HTDict.dylib
--rwxr-xr-x   1 runner  staff  283184 Oct 29 08:10 HTFix.dylib
--rwxr-xr-x   1 runner  staff  327440 Oct 29 08:11 HTFocus.dylib
--rwxr-xr-x   1 runner  staff  352624 Oct 29 08:11 HTLiveCaption.dylib
--rwxr-xr-x   1 runner  staff  305216 Oct 29 08:11 HTLock.dylib
--rwxr-xr-x   1 runner  staff  305216 Oct 29 08:11 HTNotes.dylib
--rwxr-xr-x   1 runner  staff  305824 Oct 29 08:10 HTOnline.dylib
--rwxr-xr-x   1 runner  staff  307888 Oct 29 08:11 HTPanel.dylib
--rwxr-xr-x   1 runner  staff  306176 Oct 29 08:11 HTPhrases.dylib
--rwxr-xr-x   1 runner  staff  287488 Oct 29 08:11 HTReminder.dylib
--rwxr-xr-x   1 runner  staff  305456 Oct 29 08:10 HTSave.dylib
--rwxr-xr-x   1 runner  staff  305072 Oct 29 08:10 HTSeen.dylib
--rwxr-xr-x   1 runner  staff  305104 Oct 29 08:11 HTTheme.dylib
--rwxr-xr-x   1 runner  staff  391488 Oct 29 08:10 HTTranslate.dylib
--rwxr-xr-x   1 runner  staff  327840 Oct 29 08:11 HTVocabTools.dylib
--rwxr-xr-x   1 runner  staff  340768 Oct 29 08:11 HTVoiceLog.dylib
--rwxr-xr-x   1 runner  staff  339296 Oct 29 08:11 HTWidget2.dylib
--rwxr-xr-x   1 runner  staff  309328 Oct 29 08:11 HTWorldClock.dylib
-drwxr-xr-x  24 runner  staff     768 Oct 29 08:11 obj
+total 15024
+drwxr-xr-x  26 runner  staff     832 Oct 29 08:30 .
+drwxr-xr-x   8 runner  staff     256 Oct 29 08:29 ..
+-rw-r--r--   1 runner  staff    1841 Oct 29 08:30 build.log
+-rwxr-xr-x   1 runner  staff  930016 Oct 29 08:30 FocusMode.dylib
+-rwxr-xr-x   1 runner  staff  305424 Oct 29 08:30 HTAccent.dylib
+-rwxr-xr-x   1 runner  staff  304400 Oct 29 08:29 HTAds.dylib
+-rwxr-xr-x   1 runner  staff  305600 Oct 29 08:30 HTBackup.dylib
+-rwxr-xr-x   1 runner  staff  384800 Oct 29 08:29 HTDict.dylib
+-rwxr-xr-x   1 runner  staff  283184 Oct 29 08:29 HTFix.dylib
+-rwxr-xr-x   1 runner  staff  327440 Oct 29 08:30 HTFocus.dylib
+-rwxr-xr-x   1 runner  staff  356640 Oct 29 08:30 HTLiveCaption.dylib
+-rwxr-xr-x   1 runner  staff  305216 Oct 29 08:30 HTLock.dylib
+-rwxr-xr-x   1 runner  staff  305216 Oct 29 08:30 HTNotes.dylib
+-rwxr-xr-x   1 runner  staff  305824 Oct 29 08:29 HTOnline.dylib
+-rwxr-xr-x   1 runner  staff  307888 Oct 29 08:30 HTPanel.dylib
+-rwxr-xr-x   1 runner  staff  306176 Oct 29 08:30 HTPhrases.dylib
+-rwxr-xr-x   1 runner  staff  287488 Oct 29 08:30 HTReminder.dylib
+-rwxr-xr-x   1 runner  staff  305456 Oct 29 08:29 HTSave.dylib
+-rwxr-xr-x   1 runner  staff  305072 Oct 29 08:29 HTSeen.dylib
+-rwxr-xr-x   1 runner  staff  305104 Oct 29 08:30 HTTheme.dylib
+-rwxr-xr-x   1 runner  staff  391488 Oct 29 08:29 HTTranslate.dylib
+-rwxr-xr-x   1 runner  staff  327840 Oct 29 08:30 HTVocabTools.dylib
+-rwxr-xr-x   1 runner  staff  340768 Oct 29 08:30 HTVoiceLog.dylib
+-rwxr-xr-x   1 runner  staff  339296 Oct 29 08:30 HTWidget2.dylib
+-rwxr-xr-x   1 runner  staff  309328 Oct 29 08:30 HTWorldClock.dylib
+drwxr-xr-x  24 runner  staff     768 Oct 29 08:30 obj
