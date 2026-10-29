@@ -21,7 +21,7 @@
 #import <AVFoundation/AVFoundation.h>
 #import <ReplayKit/ReplayKit.h>
 #import <CoreMedia/CoreMedia.h>
-#define BUILD @"livecaption4"
+#define BUILD @"livecaption5"
 #define HT_LC_FROM_KEY @"ht.livecaption.from"
 #define HT_LC_TO_KEY @"ht.livecaption.to"
 #define HT_LC_SPEECH_KEY_NAME @"NSSpeechRecognitionUsageDescription"
@@ -98,7 +98,7 @@ static AVAudioPCMBuffer *htPCMBufferFromSampleBuffer(CMSampleBufferRef sampleBuf
     memset(&audioBufferList, 0, sizeof(audioBufferList));
     OSStatus st = CMSampleBufferGetAudioBufferListWithRetainedBlockBuffer(sampleBuffer, NULL, &audioBufferList, sizeof(audioBufferList), NULL, NULL, kCMSampleBufferFlag_AudioBufferList_Assure16ByteAlignment, &blockBuffer);
     if (st != noErr || audioBufferList.mNumberBuffers == 0) { if (blockBuffer) CFRelease(blockBuffer); return nil; }
-    AudioBufferList *dst = pcm.audioBufferList;
+    AudioBufferList *dst = pcm.mutableAudioBufferList;
     UInt32 n = MIN(audioBufferList.mNumberBuffers, dst->mNumberBuffers);
     for (UInt32 i = 0; i < n; i++) {
         UInt32 bytes = MIN(audioBufferList.mBuffers[i].mDataByteSize, dst->mBuffers[i].mDataByteSize);
@@ -108,6 +108,23 @@ static AVAudioPCMBuffer *htPCMBufferFromSampleBuffer(CMSampleBufferRef sampleBuf
     }
     if (blockBuffer) CFRelease(blockBuffer);
     return pcm;
+}
+
+// The crash fix: ReplayKit's app-audio buffers do NOT keep one fixed format — HelloTalk's own audio
+// session can switch the Voice Room's output between mono/stereo and between sample rates as the
+// call settles in (right after tapping "صوتهم", matching what was reported: works for a moment, then
+// crashes). SFSpeechAudioBufferRecognitionRequest requires every buffer handed to ONE request to
+// share the exact format of the first buffer it ever saw — appendAudioPCMBuffer: throws an
+// uncaught NSException (an instant, unrecoverable crash of the host app) the moment that format
+// changes mid-stream. The mic path never hits this because AVAudioEngine's tap format is fixed once
+// at install time; ReplayKit's is not. Fix: convert every incoming buffer to one FIXED canonical
+// format before it ever reaches the speech request, rebuilding the AVAudioConverter on the fly
+// whenever the source format actually changes — so the request only ever sees one constant format.
+static AVAudioFormat *htLCCanonicalAppAudioFormat(void) {
+    static AVAudioFormat *fmt;
+    static dispatch_once_t o;
+    dispatch_once(&o, ^{ fmt = [[AVAudioFormat alloc] initStandardFormatWithSampleRate:16000 channels:1]; });
+    return fmt;
 }
 
 @interface HTLiveCaptionVC : UIViewController <UITextViewDelegate>
@@ -138,6 +155,8 @@ static AVAudioPCMBuffer *htPCMBufferFromSampleBuffer(CMSampleBufferRef sampleBuf
 @property (nonatomic, strong) SFSpeechRecognizer *recognizer;
 @property (nonatomic, strong) AVAudioEngine *audioEngine;
 @property (nonatomic, strong) RPScreenRecorder *screenRecorder;
+@property (nonatomic, strong) AVAudioConverter *appAudioConverter;        // rebuilt whenever the source format drifts
+@property (nonatomic, strong) AVAudioFormat *appAudioConverterSourceFmt;  // the source format the converter above matches
 @property (nonatomic, strong) SFSpeechAudioBufferRecognitionRequest *speechRequest;
 @property (nonatomic, strong) SFSpeechRecognitionTask *speechTask;
 @property (nonatomic, copy) NSString *lastPartial;
@@ -419,6 +438,34 @@ static AVAudioPCMBuffer *htPCMBufferFromSampleBuffer(CMSampleBufferRef sampleBuf
         });
     }];
 }
+// Converts any incoming ReplayKit buffer to the one fixed canonical format, rebuilding the
+// converter only when the source format actually changes. This is what stops the crash: the
+// speech request never sees more than one format for the life of a session.
+- (AVAudioPCMBuffer *)normalizedAppAudioBuffer:(AVAudioPCMBuffer *)source {
+    AVAudioFormat *target = htLCCanonicalAppAudioFormat();
+    if (!source || !source.format || source.frameLength == 0) return nil;
+    if ([source.format isEqual:target]) return source;   // already canonical — common case for mono mic-rate audio
+    if (!self.appAudioConverter || ![self.appAudioConverterSourceFmt isEqual:source.format]) {
+        AVAudioConverter *conv = [[AVAudioConverter alloc] initFromFormat:source.format toFormat:target];
+        if (!conv) return nil;   // e.g. unsupported channel layout — drop this buffer rather than crash
+        self.appAudioConverter = conv;
+        self.appAudioConverterSourceFmt = source.format;
+    }
+    double ratio = target.sampleRate / MAX(source.format.sampleRate, 1.0);
+    AVAudioFrameCount outCapacity = (AVAudioFrameCount)(source.frameLength * ratio) + 16;
+    AVAudioPCMBuffer *outBuf = [[AVAudioPCMBuffer alloc] initWithPCMFormat:target frameCapacity:outCapacity];
+    if (!outBuf) return nil;
+    __block BOOL fed = NO;
+    NSError *convErr = nil;
+    AVAudioConverterOutputStatus status = [self.appAudioConverter convertToBuffer:outBuf error:&convErr inputBlock:^AVAudioBuffer * _Nullable(AVAudioPacketCount inNumberOfPackets, AVAudioConverterInputStatus * _Nonnull outStatus) {
+        if (fed) { *outStatus = AVAudioConverterInputStatus_NoDataNow; return nil; }
+        fed = YES;
+        *outStatus = AVAudioConverterInputStatus_HaveData;
+        return source;
+    }];
+    if (status == AVAudioConverterOutputStatus_Error || convErr || outBuf.frameLength == 0) return nil;
+    return outBuf;
+}
 - (void)beginAppAudioSession {
     NSArray *langs = htLCLangs();
     NSString *locale = htLocaleForLangCode(langs[self.fromIdx][0]);
@@ -430,6 +477,8 @@ static AVAudioPCMBuffer *htPCMBufferFromSampleBuffer(CMSampleBufferRef sampleBuf
     self.usingAppAudio = YES;
     self.listening = YES;
     self.easyMode = YES;
+    self.appAudioConverter = nil;         // reset: new session, rebuild converter fresh on first buffer
+    self.appAudioConverterSourceFmt = nil;
     [self updateMicUI];
     [self startOneSpeechTask];
     __weak typeof(self) weakSelf = self;
@@ -437,7 +486,18 @@ static AVAudioPCMBuffer *htPCMBufferFromSampleBuffer(CMSampleBufferRef sampleBuf
         if (bufferType != RPSampleBufferTypeAudioApp) return;   // ignore video frames entirely
         if (!CMSampleBufferDataIsReady(sampleBuffer)) return;
         AVAudioPCMBuffer *pcm = htPCMBufferFromSampleBuffer(sampleBuffer);
-        if (pcm) [weakSelf.speechRequest appendAudioPCMBuffer:pcm];
+        if (!pcm) return;
+        __strong typeof(self) strongSelf = weakSelf;
+        if (!strongSelf) return;
+        AVAudioPCMBuffer *normalized = [strongSelf normalizedAppAudioBuffer:pcm];
+        if (!normalized || normalized.frameLength == 0) return;
+        @try {
+            [strongSelf.speechRequest appendAudioPCMBuffer:normalized];
+        } @catch (NSException *ex) {
+            // Last-resort safety net: HelloTalk's own audio session can still reconfigure (route
+            // change, call state change) in a way that slips past normalization — swallow it
+            // instead of letting it crash the host app, and just drop that one buffer.
+        }
     } completionHandler:^(NSError *error) {
         dispatch_async(dispatch_get_main_queue(), ^{
             if (error) {
