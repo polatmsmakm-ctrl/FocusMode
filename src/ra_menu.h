@@ -82,6 +82,8 @@ static NSString *raIcon(NSString *k) {
     if ([k hasPrefix:@"ht.widget"]) return @"square.grid.2x2.fill";
     if ([k hasPrefix:@"ht.theme"]) return @"paintbrush.fill";
     if ([k hasPrefix:@"ht.panel"]) return @"square.grid.3x3.fill";
+    if ([k hasPrefix:@"ht.spoof.location"]) return @"location.fill";
+    if ([k hasPrefix:@"ht.spoof.time"]) return @"clock.arrow.2.circlepath";
     return @"sparkles";
 }
 
@@ -147,7 +149,7 @@ static NSString *raIcon(NSString *k) {
     _table.tableHeaderView = h;
 
     // footer: credit
-    UIView *f = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 100, 688)];
+    UIView *f = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 100, 730)];
     UIView *line = [[UIView alloc] initWithFrame:CGRectMake(0, 22, 60, 1)];
     line.backgroundColor = [UIColor colorWithWhite:1 alpha:0.25];
     line.autoresizingMask = UIViewAutoresizingFlexibleLeftMargin | UIViewAutoresizingFlexibleRightMargin;
@@ -286,6 +288,15 @@ static NSString *raIcon(NSString *k) {
     th.titleLabel.font = [UIFont systemFontOfSize:13 weight:UIFontWeightMedium];
     [th addTarget:self action:@selector(theme) forControlEvents:UIControlEventTouchUpInside];
     [f addSubview:th];
+    UIButton *sp = [UIButton buttonWithType:UIButtonTypeCustom];
+    sp.bounds = CGRectMake(0, 0, 170, 34);
+    sp.center = CGPointMake(50, 680);
+    sp.layer.cornerRadius = 17;
+    sp.backgroundColor = [UIColor colorWithWhite:1 alpha:0.14];
+    [sp setTitle:@"📍 الموقع والوقت" forState:UIControlStateNormal];
+    sp.titleLabel.font = [UIFont systemFontOfSize:13 weight:UIFontWeightMedium];
+    [sp addTarget:self action:@selector(spoof) forControlEvents:UIControlEventTouchUpInside];
+    [f addSubview:sp];
     _table.tableFooterView = f;
 
     // close button
@@ -369,6 +380,10 @@ static NSString *raIcon(NSString *k) {
 - (void)theme {
     // HTTheme listens; it presents the full theme picker on top of this menu
     [NSNotificationCenter.defaultCenter postNotificationName:@"ra.theme" object:self];
+}
+- (void)spoof {
+    // HTSpoof listens; it presents the fake location/time settings screen on top of this menu
+    [NSNotificationCenter.defaultCenter postNotificationName:@"ra.spoof" object:self];
 }
 - (NSArray *)groups {
     NSMutableArray *names = [NSMutableArray new];

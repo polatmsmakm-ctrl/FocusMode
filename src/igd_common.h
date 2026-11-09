@@ -95,6 +95,27 @@ static BOOL igdHook(const char *clsName, const char *selName, IGDMaker make) {
     return YES;
 }
 
+// Same as igdHook, but for a CLASS method (e.g. +[NSDate date]) instead of an instance method —
+// operates on the metaclass, since that's where class methods actually live in the runtime.
+static BOOL igdHookClass(const char *clsName, const char *selName, IGDMaker make) IGD_UNUSED;
+static BOOL igdHookClass(const char *clsName, const char *selName, IGDMaker make) {
+    Class c = objc_getClass(clsName);
+    if (!c) { [igdStatus() addObject:[NSString stringWithFormat:@"✗ +%s (no class)", clsName]]; return NO; }
+    Class meta = object_getClass(c);
+    SEL sel = sel_registerName(selName);
+    Method m = class_getClassMethod(c, sel);
+    if (!m) { [igdStatus() addObject:[NSString stringWithFormat:@"✗ +%s %s (no method)", clsName, selName]]; return NO; }
+    char *rt = method_copyReturnType(m);
+    char ret = rt ? rt[0] : 'v';
+    free(rt);
+    id blk = make(method_getImplementation(m), sel, ret, method_getNumberOfArguments(m) - 2);
+    if (!blk) { [igdStatus() addObject:[NSString stringWithFormat:@"✗ +%s %s (unsupported signature)", clsName, selName]]; return NO; }
+    IMP imp = imp_implementationWithBlock(blk);
+    if (!class_addMethod(meta, sel, imp, method_getTypeEncoding(m))) method_setImplementation(m, imp);
+    [igdStatus() addObject:[NSString stringWithFormat:@"✓ +%s %s", clsName, selName]];
+    return YES;
+}
+
 // Install now and once more after 4s (some classes load late); show a one-time summary per build.
 static void igdRun(NSString *name, NSString *build, void (^install)(void)) IGD_UNUSED;
 static void igdRun(NSString *name, NSString *build, void (^install)(void)) {
