@@ -17,7 +17,10 @@
 // "📍 الموقع والوقت" in Ra Menu's footer.
 #import "igd_common.h"
 #import <CoreLocation/CoreLocation.h>
-#define BUILD @"spoof2"
+#import <CoreFoundation/CoreFoundation.h>
+#import <time.h>
+#import <sys/time.h>
+#define BUILD @"spoof3"
 
 #define HT_SPOOF_LAT_KEY @"ht.spoof.lat"
 #define HT_SPOOF_LNG_KEY @"ht.spoof.lng"
@@ -48,8 +51,18 @@ static const void *kSpoofTimerKey = &kSpoofTimerKey;
 
 static void htSpoofFireDelegate(CLLocationManager *mgr) {
     id del = mgr.delegate;
+    CLLocation *loc = htFakeLocation();
     if ([del respondsToSelector:@selector(locationManager:didUpdateLocations:)]) {
-        [del locationManager:mgr didUpdateLocations:@[htFakeLocation()]];
+        [del locationManager:mgr didUpdateLocations:@[loc]];
+    }
+    // some older/hybrid delegates (and third-party location-SDK adapters built on top of
+    // CLLocationManager) still only implement the pre-iOS6 single-location callback — fire it
+    // too, with "fromLocation" set to the same fake point, so neither code path is left dark.
+    if ([del respondsToSelector:@selector(locationManager:didUpdateToLocation:fromLocation:)]) {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+        [del locationManager:mgr didUpdateToLocation:loc fromLocation:loc];
+#pragma clang diagnostic pop
     }
 }
 static void htSpoofAnnounceAuthorized(CLLocationManager *mgr) {
@@ -166,6 +179,62 @@ static void hookTime(void) {
         };
     });
 }
+
+// ---- low-level time interpose ------------------------------------------------------------------
+// The ObjC NSDate hooks above cover ObjC/UIKit code, but Swift's own `Date()` is a plain struct —
+// it does NOT call +[NSDate date] at all, it reads the real clock straight from a handful of
+// libSystem/CoreFoundation C functions. HelloTalk has Swift screens (confirmed from its own binary
+// symbols — the Voice Room classes), so without this, "وقت مزيف" would do nothing for any Swift
+// code path, which matches exactly what was reported. Fix: interpose those few C primitives
+// system-wide for this process, via the same __DATA,__interpose mechanism dylib injectors use —
+// this is what makes it reach Swift (and C/C++) callers too, not just Objective-C ones.
+#define HT_DYLD_INTERPOSE(_replacement, _replacee) \
+    __attribute__((used)) static struct { const void *replacement; const void *replacee; } \
+    _htSpoofInterpose_##_replacee __attribute__((section("__DATA,__interpose"))) = \
+    { (const void *)(uintptr_t)&(_replacement), (const void *)(uintptr_t)&(_replacee) };
+
+// Ground truth, read via a libSystem call we never interpose ourselves — so none of the
+// replacements below ever call back into themselves (which would spin forever).
+static uint64_t htRealNowNanos(void) { return clock_gettime_nsec_np(CLOCK_REALTIME); }
+static uint64_t htSpoofNowNanos(void) {
+    uint64_t real = htRealNowNanos();
+    if (!raOn(HT_SPOOF_TIME_ON)) return real;
+    int64_t offNanos = (int64_t)(htSpoofTimeOffset() * 1e9);
+    return (uint64_t)((int64_t)real + offNanos);
+}
+
+static time_t htSpoofTimeFn(time_t *t) {
+    time_t v = (time_t)(htSpoofNowNanos() / 1000000000ULL);
+    if (t) *t = v;
+    return v;
+}
+HT_DYLD_INTERPOSE(htSpoofTimeFn, time)
+
+static int htSpoofGettimeofday(struct timeval *tv, void *tz) {
+    if (!tv) return 0;
+    uint64_t n = htSpoofNowNanos();
+    tv->tv_sec = (time_t)(n / 1000000000ULL);
+    tv->tv_usec = (int)((n % 1000000000ULL) / 1000ULL);
+    return 0;
+}
+HT_DYLD_INTERPOSE(htSpoofGettimeofday, gettimeofday)
+
+static CFAbsoluteTime htSpoofCFAbsoluteTimeGetCurrent(void) {
+    double secsSinceUnixEpoch = (double)htSpoofNowNanos() / 1e9;
+    return secsSinceUnixEpoch - kCFAbsoluteTimeIntervalSince1970;   // CF epoch is 2001-01-01
+}
+HT_DYLD_INTERPOSE(htSpoofCFAbsoluteTimeGetCurrent, CFAbsoluteTimeGetCurrent)
+
+static int htSpoofClockGettime(clockid_t clk, struct timespec *ts) {
+    if (!ts) return 0;
+    // only the wall clock gets spoofed — monotonic/uptime clocks pass through untouched so
+    // timers, animations and "x دقائق مضت" elapsed-time math keep working normally
+    uint64_t nanos = (clk == CLOCK_REALTIME) ? htSpoofNowNanos() : clock_gettime_nsec_np(clk);
+    ts->tv_sec = (time_t)(nanos / 1000000000ULL);
+    ts->tv_nsec = (long)(nanos % 1000000000ULL);
+    return 0;
+}
+HT_DYLD_INTERPOSE(htSpoofClockGettime, clock_gettime)
 
 // ---- settings screen ----------------------------------------------------------------------------
 static NSArray<NSArray *> *htSpoofCities(void) {
