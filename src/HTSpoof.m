@@ -21,7 +21,7 @@
 #import <time.h>
 #import <sys/time.h>
 #import <stdatomic.h>
-#define BUILD @"spoof6"
+#define BUILD @"spoof7"
 
 #define HT_SPOOF_LAT_KEY @"ht.spoof.lat"
 #define HT_SPOOF_LNG_KEY @"ht.spoof.lng"
@@ -304,6 +304,7 @@ static NSArray<NSArray *> *htSpoofCities(void) {
 @property (nonatomic, strong) UITextField *latField;
 @property (nonatomic, strong) UITextField *lngField;
 @property (nonatomic, strong) UILabel *locStatus;
+@property (nonatomic, strong) UILabel *diagStatus;
 @property (nonatomic, strong) UIDatePicker *picker;
 @property (nonatomic, strong) UILabel *timeStatus;
 @property (nonatomic, strong) NSTimer *clockTimer;
@@ -409,6 +410,14 @@ static NSArray<NSArray *> *htSpoofCities(void) {
     self.timeStatus = [self statusLabel];
     [col addArrangedSubview:self.timeStatus];
 
+    // ---- live self-test: calls the exact same APIs HelloTalk itself would, right here, so you can
+    // see directly whether the hooks are actually intercepting anything, independent of whether
+    // HelloTalk's own screens happen to show that value anywhere.
+    [col addArrangedSubview:[self sectionTitle:@"🔍 اختبار مباشر"]];
+    self.diagStatus = [self statusLabel];
+    self.diagStatus.font = [UIFont monospacedSystemFontOfSize:11 weight:UIFontWeightRegular];
+    [col addArrangedSubview:self.diagStatus];
+
     [self refreshStatus];
     self.clockTimer = [NSTimer scheduledTimerWithTimeInterval:1.0 repeats:YES block:^(NSTimer *t) { [self refreshStatus]; }];
 }
@@ -507,6 +516,19 @@ static NSArray<NSArray *> *htSpoofCities(void) {
     self.locStatus.text = [NSString stringWithFormat:@"%@ المحفوظ: %.5f, %.5f", locOn ? @"🟢 مفعّل —" : @"⚪️ غير مفعّل —", htSpoofLat(), htSpoofLng()];
     NSDate *fakeNow = [NSDate.date dateByAddingTimeInterval:htSpoofTimeOffset()];
     self.timeStatus.text = [NSString stringWithFormat:@"%@ الوقت اللي يشوفه التطبيق الآن: %@", timeOn ? @"🟢 مفعّل —" : @"⚪️ غير مفعّل —", [fmt stringFromDate:fakeNow]];
+
+    // Calls the EXACT same APIs HelloTalk's own code would call — [NSDate date] and a plain
+    // CLLocationManager's -location — right here, right now. If these two lines don't show the
+    // fake values while the toggles above are 🟢, the hook itself isn't taking effect (as opposed
+    // to HelloTalk reading time/location some other way we haven't covered yet).
+    NSDate *liveDate = NSDate.date;
+    CLLocationManager *probe = [CLLocationManager new];
+    CLLocation *liveLoc = probe.location;
+    NSMutableString *diag = [NSMutableString string];
+    [diag appendFormat:@"NSDate.date الآن: %@\n", [fmt stringFromDate:liveDate]];
+    [diag appendFormat:@"CLLocationManager.location الآن: %@",
+        liveLoc ? [NSString stringWithFormat:@"%.5f, %.5f", liveLoc.coordinate.latitude, liveLoc.coordinate.longitude] : @"(فاضي/nil)"];
+    self.diagStatus.text = diag;
 }
 - (void)close { [self dismissViewControllerAnimated:YES completion:nil]; }
 @end
