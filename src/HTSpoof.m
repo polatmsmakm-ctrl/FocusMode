@@ -21,7 +21,7 @@
 #import <time.h>
 #import <sys/time.h>
 #import <stdatomic.h>
-#define BUILD @"spoof7"
+#define BUILD @"spoof8"
 
 #define HT_SPOOF_LAT_KEY @"ht.spoof.lat"
 #define HT_SPOOF_LNG_KEY @"ht.spoof.lng"
@@ -233,6 +233,11 @@ static void htSpoofRefreshTimeCache(void) {
     atomic_store_explicit(&gSpoofTimeOnCache, raOn(HT_SPOOF_TIME_ON), memory_order_relaxed);
     atomic_store_explicit(&gSpoofOffsetNanosCache, (int64_t)(htSpoofTimeOffset() * 1e9), memory_order_relaxed);
 }
+// The REAL current date, never affected by our own hooks (dateWithTimeIntervalSince1970: isn't
+// hooked, and clock_gettime_nsec_np isn't interposed). The settings screen must compute offsets and
+// show "real vs fake" against THIS — using NSDate.date there (as an earlier version did) reads the
+// already-faked clock once the hook is active, so every "طبّق" corrupted the saved offset.
+static NSDate *htRealNowDate(void) { return [NSDate dateWithTimeIntervalSince1970:(double)htRealNowNanos() / 1e9]; }
 
 static time_t htSpoofTimeFn(time_t *t) {
     time_t v = (time_t)(htSpoofNowNanos() / 1000000000ULL);
@@ -395,7 +400,7 @@ static NSArray<NSArray *> *htSpoofCities(void) {
     self.picker = [UIDatePicker new];
     self.picker.datePickerMode = UIDatePickerModeDateAndTime;
     self.picker.preferredDatePickerStyle = UIDatePickerStyleWheels;
-    self.picker.date = [NSDate.date dateByAddingTimeInterval:htSpoofTimeOffset()];
+    self.picker.date = [htRealNowDate() dateByAddingTimeInterval:htSpoofTimeOffset()];
     self.picker.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
     [col addArrangedSubview:self.picker];
 
@@ -496,7 +501,7 @@ static NSArray<NSArray *> *htSpoofCities(void) {
     [self refreshStatus];
 }
 - (void)applyTime {
-    NSTimeInterval off = [self.picker.date timeIntervalSinceDate:NSDate.date];
+    NSTimeInterval off = [self.picker.date timeIntervalSinceDate:htRealNowDate()];
     [NSUserDefaults.standardUserDefaults setDouble:off forKey:HT_SPOOF_TIME_OFFSET_KEY];
     htSpoofRefreshTimeCache();
     [[UIImpactFeedbackGenerator new] impactOccurred];
@@ -506,29 +511,40 @@ static NSArray<NSArray *> *htSpoofCities(void) {
 - (void)resetTime {
     [NSUserDefaults.standardUserDefaults setDouble:0 forKey:HT_SPOOF_TIME_OFFSET_KEY];
     htSpoofRefreshTimeCache();
-    self.picker.date = NSDate.date;
+    self.picker.date = htRealNowDate();
     [self refreshStatus];
 }
 - (void)refreshStatus {
     NSDateFormatter *fmt = [NSDateFormatter new];
     fmt.dateFormat = @"yyyy-MM-dd HH:mm:ss";
     BOOL locOn = raOn(HT_SPOOF_LOC_ON), timeOn = raOn(HT_SPOOF_TIME_ON);
+    NSDate *realNow = htRealNowDate();
+    NSDate *wantedFake = [realNow dateByAddingTimeInterval:htSpoofTimeOffset()];
     self.locStatus.text = [NSString stringWithFormat:@"%@ المحفوظ: %.5f, %.5f", locOn ? @"🟢 مفعّل —" : @"⚪️ غير مفعّل —", htSpoofLat(), htSpoofLng()];
-    NSDate *fakeNow = [NSDate.date dateByAddingTimeInterval:htSpoofTimeOffset()];
-    self.timeStatus.text = [NSString stringWithFormat:@"%@ الوقت اللي يشوفه التطبيق الآن: %@", timeOn ? @"🟢 مفعّل —" : @"⚪️ غير مفعّل —", [fmt stringFromDate:fakeNow]];
+    self.timeStatus.text = [NSString stringWithFormat:@"%@ الوقت المطلوب: %@", timeOn ? @"🟢 مفعّل —" : @"⚪️ غير مفعّل —", [fmt stringFromDate:wantedFake]];
 
-    // Calls the EXACT same APIs HelloTalk's own code would call — [NSDate date] and a plain
-    // CLLocationManager's -location — right here, right now. If these two lines don't show the
-    // fake values while the toggles above are 🟢, the hook itself isn't taking effect (as opposed
-    // to HelloTalk reading time/location some other way we haven't covered yet).
-    NSDate *liveDate = NSDate.date;
-    CLLocationManager *probe = [CLLocationManager new];
-    CLLocation *liveLoc = probe.location;
-    NSMutableString *diag = [NSMutableString string];
-    [diag appendFormat:@"NSDate.date الآن: %@\n", [fmt stringFromDate:liveDate]];
-    [diag appendFormat:@"CLLocationManager.location الآن: %@",
-        liveLoc ? [NSString stringWithFormat:@"%.5f, %.5f", liveLoc.coordinate.latitude, liveLoc.coordinate.longitude] : @"(فاضي/nil)"];
-    self.diagStatus.text = diag;
+    // Live self-test: the exact APIs HelloTalk's own code calls, answered right now.
+    NSDate *hooked = NSDate.date;
+    CLLocation *liveLoc = [CLLocationManager new].location;
+    BOOL timeOK = !timeOn || fabs([hooked timeIntervalSinceDate:wantedFake]) < 5;
+    BOOL locOK = !locOn || (liveLoc && fabs(liveLoc.coordinate.latitude - htSpoofLat()) < 0.001 && fabs(liveLoc.coordinate.longitude - htSpoofLng()) < 0.001);
+
+    Method dm = class_getClassMethod(NSDate.class, @selector(date));
+    Method lm = class_getInstanceMethod(CLLocationManager.class, @selector(location));
+    BOOL dHooked = dm && imp_getBlock(method_getImplementation(dm)) != nil;
+    BOOL lHooked = lm && imp_getBlock(method_getImplementation(lm)) != nil;
+
+    NSMutableString *d = [NSMutableString string];
+    [d appendFormat:@"الوقت الحقيقي:   %@\n", [fmt stringFromDate:realNow]];
+    [d appendFormat:@"NSDate.date:     %@  %@\n", [fmt stringFromDate:hooked], timeOK ? @"✅" : @"❌"];
+    [d appendFormat:@"location:        %@  %@\n",
+        liveLoc ? [NSString stringWithFormat:@"%.4f, %.4f", liveLoc.coordinate.latitude, liveLoc.coordinate.longitude] : @"nil", locOK ? @"✅" : @"❌"];
+    [d appendFormat:@"hook +date: %@   hook location: %@\n", dHooked ? @"✓" : @"✗", lHooked ? @"✓" : @"✗"];
+    [d appendFormat:@"cache: on=%d off=%.0fs   ra: loc=%d time=%d\n",
+        (int)atomic_load(&gSpoofTimeOnCache), (double)atomic_load(&gSpoofOffsetNanosCache) / 1e9, locOn, timeOn];
+    for (NSString *line in [igdStatus() copy])
+        if ([line containsString:@"NSDate"] || [line containsString:@"CLLocation"] || [line containsString:@"HTSpoof"]) [d appendFormat:@"%@\n", line];
+    self.diagStatus.text = d;
 }
 - (void)close { [self dismissViewControllerAnimated:YES completion:nil]; }
 @end
