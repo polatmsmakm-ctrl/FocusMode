@@ -17,7 +17,7 @@
 // "📍 الموقع والوقت" in Ra Menu's footer.
 #import "igd_common.h"
 #import <CoreLocation/CoreLocation.h>
-#define BUILD @"spoof1"
+#define BUILD @"spoof2"
 
 #define HT_SPOOF_LAT_KEY @"ht.spoof.lat"
 #define HT_SPOOF_LNG_KEY @"ht.spoof.lng"
@@ -235,12 +235,12 @@ static NSArray<NSArray *> *htSpoofCities(void) {
 
     // ---- location section ----
     [col addArrangedSubview:[self sectionTitle:@"📍 الموقع المزيف"]];
-    UIStackView *latRow = [self fieldRow:@"خط العرض (lat)" fieldOut:&_latField];
-    UIStackView *lngRow = [self fieldRow:@"خط الطول (lng)" fieldOut:&_lngField];
+    self.latField = [self coordField];
+    self.lngField = [self coordField];
     self.latField.text = [NSString stringWithFormat:@"%.6f", htSpoofLat()];
     self.lngField.text = [NSString stringWithFormat:@"%.6f", htSpoofLng()];
-    [col addArrangedSubview:latRow];
-    [col addArrangedSubview:lngRow];
+    [col addArrangedSubview:[self fieldRow:@"خط العرض (lat)" field:self.latField]];
+    [col addArrangedSubview:[self fieldRow:@"خط الطول (lng)" field:self.lngField]];
 
     UIScrollView *chipScroll = [UIScrollView new];
     chipScroll.showsHorizontalScrollIndicator = NO;
@@ -334,12 +334,7 @@ static NSArray<NSArray *> *htSpoofCities(void) {
     [b.heightAnchor constraintEqualToConstant:46].active = YES;
     return b;
 }
-- (UIStackView *)fieldRow:(NSString *)label fieldOut:(UITextField **)out {
-    UILabel *l = [UILabel new];
-    l.text = label;
-    l.font = [UIFont systemFontOfSize:14 weight:UIFontWeightMedium];
-    l.textColor = [UIColor colorWithWhite:1 alpha:0.8];
-    [l setContentHuggingPriority:UILayoutPriorityRequired forAxis:UILayoutConstraintAxisHorizontal];
+- (UITextField *)coordField {
     UITextField *f = [UITextField new];
     f.keyboardType = UIKeyboardTypeNumbersAndPunctuation;
     f.textColor = UIColor.whiteColor;
@@ -350,7 +345,14 @@ static NSArray<NSArray *> *htSpoofCities(void) {
     [f.heightAnchor constraintEqualToConstant:36].active = YES;
     [f.widthAnchor constraintGreaterThanOrEqualToConstant:120].active = YES;
     f.delegate = self;
-    *out = f;
+    return f;
+}
+- (UIStackView *)fieldRow:(NSString *)label field:(UITextField *)f {
+    UILabel *l = [UILabel new];
+    l.text = label;
+    l.font = [UIFont systemFontOfSize:14 weight:UIFontWeightMedium];
+    l.textColor = [UIColor colorWithWhite:1 alpha:0.8];
+    [l setContentHuggingPriority:UILayoutPriorityRequired forAxis:UILayoutConstraintAxisHorizontal];
     UIStackView *row = [[UIStackView alloc] initWithArrangedSubviews:@[l, f]];
     row.axis = UILayoutConstraintAxisHorizontal;
     row.spacing = 10;
