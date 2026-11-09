@@ -18,9 +18,11 @@
 #import "igd_common.h"
 #import <CoreLocation/CoreLocation.h>
 #import <CoreFoundation/CoreFoundation.h>
+#import <Security/Security.h>
 #import <time.h>
 #import <sys/time.h>
-#define BUILD @"spoof3"
+#import <dlfcn.h>
+#define BUILD @"spoof4"
 
 #define HT_SPOOF_LAT_KEY @"ht.spoof.lat"
 #define HT_SPOOF_LNG_KEY @"ht.spoof.lng"
@@ -235,6 +237,54 @@ static int htSpoofClockGettime(clockid_t clk, struct timespec *ts) {
     return 0;
 }
 HT_DYLD_INTERPOSE(htSpoofClockGettime, clock_gettime)
+
+// ---- keep TLS/certificate checks on the REAL clock ----------------------------------------------
+// Reported: creating a HelloTalk account stopped working while "وقت مزيف" was on. Cause: every
+// HTTPS request HelloTalk makes (including the ones account creation needs — sending/verifying a
+// code, creating the profile) validates the server's TLS certificate using the SAME wall clock we
+// just started spoofing above. Once the picked fake date falls outside that certificate's
+// validity window, EVERY network call silently fails at the TLS handshake — not just this one
+// screen. Fix: pin SecTrust's own verify-date to the REAL time, regardless of ht.spoof.time, right
+// before each trust evaluation — so HelloTalk's networking keeps working normally no matter how
+// far the fake clock is set, while +[NSDate date]/Date()/etc. (and anything HelloTalk itself
+// displays) stay spoofed as before.
+//
+// (Calling through to the real, un-interposed SecTrustEvaluate[WithError] uses dlsym(RTLD_DEFAULT,
+// ...) rather than calling the function by name — doing it by name would just call back into this
+// same replacement, since __DATA,__interpose rewrites every by-name call in the process,
+// including our own.)
+typedef Boolean (*HTSecTrustEvaluateWithErrorFn)(SecTrustRef, CFErrorRef *);
+static HTSecTrustEvaluateWithErrorFn htRealSecTrustEvaluateWithError(void) {
+    static HTSecTrustEvaluateWithErrorFn fn;
+    static dispatch_once_t o;
+    dispatch_once(&o, ^{ fn = (HTSecTrustEvaluateWithErrorFn)dlsym(RTLD_DEFAULT, "SecTrustEvaluateWithError"); });
+    return fn;
+}
+typedef OSStatus (*HTSecTrustEvaluateFn)(SecTrustRef, SecTrustResultType *);
+static HTSecTrustEvaluateFn htRealSecTrustEvaluate(void) {
+    static HTSecTrustEvaluateFn fn;
+    static dispatch_once_t o;
+    dispatch_once(&o, ^{ fn = (HTSecTrustEvaluateFn)dlsym(RTLD_DEFAULT, "SecTrustEvaluate"); });
+    return fn;
+}
+static void htSpoofPinTrustToRealDate(SecTrustRef trust) {
+    if (!trust) return;
+    CFAbsoluteTime realCF = (double)htRealNowNanos() / 1e9 - kCFAbsoluteTimeIntervalSince1970;
+    CFDateRef realDate = CFDateCreate(NULL, realCF);
+    if (realDate) { SecTrustSetVerifyDate(trust, realDate); CFRelease(realDate); }
+}
+static Boolean htSpoofSecTrustEvaluateWithError(SecTrustRef trust, CFErrorRef *error) {
+    htSpoofPinTrustToRealDate(trust);
+    HTSecTrustEvaluateWithErrorFn real = htRealSecTrustEvaluateWithError();
+    return real ? real(trust, error) : false;
+}
+HT_DYLD_INTERPOSE(htSpoofSecTrustEvaluateWithError, SecTrustEvaluateWithError)
+static OSStatus htSpoofSecTrustEvaluate(SecTrustRef trust, SecTrustResultType *result) {
+    htSpoofPinTrustToRealDate(trust);
+    HTSecTrustEvaluateFn real = htRealSecTrustEvaluate();
+    return real ? real(trust, result) : errSecNotAvailable;
+}
+HT_DYLD_INTERPOSE(htSpoofSecTrustEvaluate, SecTrustEvaluate)
 
 // ---- settings screen ----------------------------------------------------------------------------
 static NSArray<NSArray *> *htSpoofCities(void) {
