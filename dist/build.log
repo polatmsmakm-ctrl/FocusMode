@@ -43,47 +43,37 @@ OK HTTheme
 == HTPanel ==
 OK HTPanel
 == HTSpoof ==
-src/HTSpoof.m:238:76: error: passing address of non-local object to __autoreleasing parameter for write-back
-  238 |     UIStackView *latRow = [self fieldRow:@"خط العرض (lat)" fieldOut:&_latField];
-      |                                                                     ^~~~~~~~~~
-src/HTSpoof.m:239:76: error: passing address of non-local object to __autoreleasing parameter for write-back
-  239 |     UIStackView *lngRow = [self fieldRow:@"خط الطول (lng)" fieldOut:&_lngField];
-      |                                                                     ^~~~~~~~~~
-2 errors generated.
+OK HTSpoof
 == FocusMode (all-in-one) ==
 src/HTVocabTools.m:162:35: warning: variable 'page' set but not used [-Wunused-but-set-variable]
   162 |         CGFloat y = 40; NSInteger page = 0;
       |                                   ^
 1 warning generated.
-src/HTSpoof.m:238:76: error: passing address of non-local object to __autoreleasing parameter for write-back
-  238 |     UIStackView *latRow = [self fieldRow:@"خط العرض (lat)" fieldOut:&_latField];
-      |                                                                     ^~~~~~~~~~
-src/HTSpoof.m:239:76: error: passing address of non-local object to __autoreleasing parameter for write-back
-  239 |     UIStackView *lngRow = [self fieldRow:@"خط الطول (lng)" fieldOut:&_lngField];
-      |                                                                     ^~~~~~~~~~
-2 errors generated.
-total 12520
-drwxr-xr-x  24 runner  staff     768 Nov  9 07:03 .
-drwxr-xr-x   8 runner  staff     256 Nov  9 07:03 ..
--rw-r--r--   1 runner  staff    2229 Nov  9 07:04 build.log
--rwxr-xr-x   1 runner  staff  305456 Nov  9 07:03 HTAccent.dylib
--rwxr-xr-x   1 runner  staff  304384 Nov  9 07:03 HTAds.dylib
--rwxr-xr-x   1 runner  staff  305632 Nov  9 07:03 HTBackup.dylib
--rwxr-xr-x   1 runner  staff  283216 Nov  9 07:03 HTFix.dylib
--rwxr-xr-x   1 runner  staff  327472 Nov  9 07:03 HTFocus.dylib
--rwxr-xr-x   1 runner  staff  358640 Nov  9 07:03 HTLiveCaption.dylib
--rwxr-xr-x   1 runner  staff  305248 Nov  9 07:03 HTLock.dylib
--rwxr-xr-x   1 runner  staff  305264 Nov  9 07:03 HTNotes.dylib
--rwxr-xr-x   1 runner  staff  305856 Nov  9 07:03 HTOnline.dylib
--rwxr-xr-x   1 runner  staff  307920 Nov  9 07:03 HTPanel.dylib
--rwxr-xr-x   1 runner  staff  306224 Nov  9 07:03 HTPhrases.dylib
--rwxr-xr-x   1 runner  staff  304032 Nov  9 07:03 HTReminder.dylib
--rwxr-xr-x   1 runner  staff  305488 Nov  9 07:03 HTSave.dylib
--rwxr-xr-x   1 runner  staff  305104 Nov  9 07:03 HTSeen.dylib
--rwxr-xr-x   1 runner  staff  305136 Nov  9 07:03 HTTheme.dylib
--rwxr-xr-x   1 runner  staff  410672 Nov  9 07:03 HTTurjuman.dylib
--rwxr-xr-x   1 runner  staff  327920 Nov  9 07:03 HTVocabTools.dylib
--rwxr-xr-x   1 runner  staff  340816 Nov  9 07:03 HTVoiceLog.dylib
--rwxr-xr-x   1 runner  staff  339328 Nov  9 07:03 HTWidget2.dylib
--rwxr-xr-x   1 runner  staff  309360 Nov  9 07:03 HTWorldClock.dylib
-drwxr-xr-x  22 runner  staff     704 Nov  9 07:04 obj
+OK FocusMode
+total 14992
+drwxr-xr-x  26 runner  staff     832 Nov  9 07:05 .
+drwxr-xr-x   8 runner  staff     256 Nov  9 07:05 ..
+-rw-r--r--   1 runner  staff    1045 Nov  9 07:05 build.log
+-rwxr-xr-x   1 runner  staff  930112 Nov  9 07:05 FocusMode.dylib
+-rwxr-xr-x   1 runner  staff  305456 Nov  9 07:05 HTAccent.dylib
+-rwxr-xr-x   1 runner  staff  304384 Nov  9 07:05 HTAds.dylib
+-rwxr-xr-x   1 runner  staff  305632 Nov  9 07:05 HTBackup.dylib
+-rwxr-xr-x   1 runner  staff  283216 Nov  9 07:05 HTFix.dylib
+-rwxr-xr-x   1 runner  staff  327472 Nov  9 07:05 HTFocus.dylib
+-rwxr-xr-x   1 runner  staff  358640 Nov  9 07:05 HTLiveCaption.dylib
+-rwxr-xr-x   1 runner  staff  305248 Nov  9 07:05 HTLock.dylib
+-rwxr-xr-x   1 runner  staff  305264 Nov  9 07:05 HTNotes.dylib
+-rwxr-xr-x   1 runner  staff  305856 Nov  9 07:05 HTOnline.dylib
+-rwxr-xr-x   1 runner  staff  307920 Nov  9 07:05 HTPanel.dylib
+-rwxr-xr-x   1 runner  staff  306224 Nov  9 07:05 HTPhrases.dylib
+-rwxr-xr-x   1 runner  staff  304032 Nov  9 07:05 HTReminder.dylib
+-rwxr-xr-x   1 runner  staff  305488 Nov  9 07:05 HTSave.dylib
+-rwxr-xr-x   1 runner  staff  305104 Nov  9 07:05 HTSeen.dylib
+-rwxr-xr-x   1 runner  staff  329696 Nov  9 07:05 HTSpoof.dylib
+-rwxr-xr-x   1 runner  staff  305136 Nov  9 07:05 HTTheme.dylib
+-rwxr-xr-x   1 runner  staff  410672 Nov  9 07:05 HTTurjuman.dylib
+-rwxr-xr-x   1 runner  staff  327920 Nov  9 07:05 HTVocabTools.dylib
+-rwxr-xr-x   1 runner  staff  340816 Nov  9 07:05 HTVoiceLog.dylib
+-rwxr-xr-x   1 runner  staff  339328 Nov  9 07:05 HTWidget2.dylib
+-rwxr-xr-x   1 runner  staff  309360 Nov  9 07:05 HTWorldClock.dylib
+drwxr-xr-x  24 runner  staff     768 Nov  9 07:05 obj
