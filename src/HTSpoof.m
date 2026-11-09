@@ -22,13 +22,34 @@
 #import <time.h>
 #import <sys/time.h>
 #import <dlfcn.h>
-#define BUILD @"spoof4"
+#import <stdatomic.h>
+#define BUILD @"spoof5"
 
 #define HT_SPOOF_LAT_KEY @"ht.spoof.lat"
 #define HT_SPOOF_LNG_KEY @"ht.spoof.lng"
 #define HT_SPOOF_TIME_OFFSET_KEY @"ht.spoof.time.offset"
 #define HT_SPOOF_LOC_ON @"ht.spoof.location"
 #define HT_SPOOF_TIME_ON @"ht.spoof.time"
+
+// Reported: account creation hung forever on "Add a profile picture" (an infinite spinner) even
+// after the TLS fix below, specifically while وقت مزيف was on. Real cause: the interposed C time
+// functions below (time/gettimeofday/CFAbsoluteTimeGetCurrent/clock_gettime) run from EVERY corner
+// of the process — including deep inside Foundation/CFNetwork's own internals (NSUserDefaults'
+// caching, GCD timer bookkeeping, TLS timing, etc.), code that may ALREADY be holding one of
+// NSUserDefaults' own internal (non-reentrant) locks on that same thread. The previous version
+// called raOn()/NSUserDefaults from inside those same interposed functions to check the toggle —
+// so a call that started inside NSUserDefaults could loop straight back into NSUserDefaults again
+// on the same thread, which simply locks up forever against a lock it's already holding. That
+// hang, triggered by exactly the kind of network-heavy flow account creation is, is almost
+// certainly what the video showed.
+//
+// Fix: never touch NSUserDefaults (or anything else from Foundation) from inside the interposed C
+// functions. Keep a plain C atomic cache of "is time-spoof on" + "offset in nanoseconds" instead,
+// refreshed only from safe, ordinary Objective-C call sites (module install, the settings screen's
+// apply/reset buttons, and NSUserDefaultsDidChangeNotification) — the interposed functions then
+// just do a lock-free atomic read, nothing that can ever contend with anything else in the process.
+static _Atomic BOOL gSpoofTimeOnCache = NO;
+static _Atomic int64_t gSpoofOffsetNanosCache = 0;
 
 // ---- shared state -------------------------------------------------------------------------------
 static double htSpoofLat(void) {
@@ -153,13 +174,15 @@ static void hookLocation(void) {
 }
 
 // ---- time hooks -------------------------------------------------------------------------------
+// NB: these three use the same atomic cache as the low-level interpose layer further down (never
+// raOn()/NSUserDefaults directly) — explained in the big comment above gSpoofTimeOnCache.
 static void hookTime(void) {
     igdHookClass("NSDate", "date", ^id(IMP orig, SEL s, char ret, unsigned nargs) {
         if (ret != '@' || nargs != 0) return nil;
         return ^NSDate *(id cls) {
             NSDate *real = ((NSDate *(*)(id, SEL))orig)(cls, s);
-            if (!raOn(HT_SPOOF_TIME_ON)) return real;
-            NSTimeInterval off = htSpoofTimeOffset();
+            if (!atomic_load_explicit(&gSpoofTimeOnCache, memory_order_relaxed)) return real;
+            NSTimeInterval off = (NSTimeInterval)atomic_load_explicit(&gSpoofOffsetNanosCache, memory_order_relaxed) / 1e9;
             return off != 0 ? [real dateByAddingTimeInterval:off] : real;
         };
     });
@@ -167,8 +190,8 @@ static void hookTime(void) {
         if (ret != '@' || nargs != 1) return nil;
         return ^NSDate *(id cls, NSTimeInterval secs) {
             NSDate *real = ((NSDate *(*)(id, SEL, NSTimeInterval))orig)(cls, s, secs);
-            if (!raOn(HT_SPOOF_TIME_ON)) return real;
-            NSTimeInterval off = htSpoofTimeOffset();
+            if (!atomic_load_explicit(&gSpoofTimeOnCache, memory_order_relaxed)) return real;
+            NSTimeInterval off = (NSTimeInterval)atomic_load_explicit(&gSpoofOffsetNanosCache, memory_order_relaxed) / 1e9;
             return off != 0 ? [real dateByAddingTimeInterval:off] : real;
         };
     });
@@ -176,8 +199,9 @@ static void hookTime(void) {
         if (ret != 'd' || nargs != 0) return nil;
         return ^NSTimeInterval(id cls) {
             NSTimeInterval real = ((NSTimeInterval (*)(id, SEL))orig)(cls, s);
-            if (!raOn(HT_SPOOF_TIME_ON)) return real;
-            return real + htSpoofTimeOffset();
+            if (!atomic_load_explicit(&gSpoofTimeOnCache, memory_order_relaxed)) return real;
+            NSTimeInterval off = (NSTimeInterval)atomic_load_explicit(&gSpoofOffsetNanosCache, memory_order_relaxed) / 1e9;
+            return real + off;
         };
     });
 }
@@ -200,9 +224,16 @@ static void hookTime(void) {
 static uint64_t htRealNowNanos(void) { return clock_gettime_nsec_np(CLOCK_REALTIME); }
 static uint64_t htSpoofNowNanos(void) {
     uint64_t real = htRealNowNanos();
-    if (!raOn(HT_SPOOF_TIME_ON)) return real;
-    int64_t offNanos = (int64_t)(htSpoofTimeOffset() * 1e9);
+    if (!atomic_load_explicit(&gSpoofTimeOnCache, memory_order_relaxed)) return real;
+    int64_t offNanos = atomic_load_explicit(&gSpoofOffsetNanosCache, memory_order_relaxed);
     return (uint64_t)((int64_t)real + offNanos);
+}
+// Re-syncs the atomic cache from NSUserDefaults. Only ever called from safe, ordinary
+// Objective-C contexts (never from inside the interposed C functions above) — see the big
+// comment up top for why that separation is what actually matters here.
+static void htSpoofRefreshTimeCache(void) {
+    atomic_store_explicit(&gSpoofTimeOnCache, raOn(HT_SPOOF_TIME_ON), memory_order_relaxed);
+    atomic_store_explicit(&gSpoofOffsetNanosCache, (int64_t)(htSpoofTimeOffset() * 1e9), memory_order_relaxed);
 }
 
 static time_t htSpoofTimeFn(time_t *t) {
@@ -497,12 +528,14 @@ static NSArray<NSArray *> *htSpoofCities(void) {
 - (void)applyTime {
     NSTimeInterval off = [self.picker.date timeIntervalSinceDate:NSDate.date];
     [NSUserDefaults.standardUserDefaults setDouble:off forKey:HT_SPOOF_TIME_OFFSET_KEY];
+    htSpoofRefreshTimeCache();
     [[UIImpactFeedbackGenerator new] impactOccurred];
     if (!raOn(HT_SPOOF_TIME_ON)) igdToast(@"تم الحفظ — بس خيار \"وقت مزيف\" مطفي من Ra Menu");
     [self refreshStatus];
 }
 - (void)resetTime {
     [NSUserDefaults.standardUserDefaults setDouble:0 forKey:HT_SPOOF_TIME_OFFSET_KEY];
+    htSpoofRefreshTimeCache();
     self.picker.date = NSDate.date;
     [self refreshStatus];
 }
@@ -523,6 +556,10 @@ __attribute__((constructor)) static void init(void) {
     igdRun(@"HTSpoof", BUILD, ^{
         hookLocation();
         hookTime();
+        htSpoofRefreshTimeCache();   // prime the atomic cache before anything can call the interposed functions
+        [NSNotificationCenter.defaultCenter addObserverForName:NSUserDefaultsDidChangeNotification object:nil queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *n) {
+            htSpoofRefreshTimeCache();   // keeps the cache in sync when the toggle is flipped from Ra Menu itself
+        }];
         [NSNotificationCenter.defaultCenter addObserverForName:@"ra.spoof" object:nil queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *n) {
             UIViewController *top = raTop();
             if (!top) return;
