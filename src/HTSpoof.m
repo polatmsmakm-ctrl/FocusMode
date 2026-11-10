@@ -21,7 +21,7 @@
 #import <time.h>
 #import <sys/time.h>
 #import <stdatomic.h>
-#define BUILD @"spoof8"
+#define BUILD @"spoof9"
 
 #define HT_SPOOF_LAT_KEY @"ht.spoof.lat"
 #define HT_SPOOF_LNG_KEY @"ht.spoof.lng"
@@ -290,6 +290,10 @@ static NSArray<NSArray *> *htSpoofCities(void) {
     static dispatch_once_t o;
     dispatch_once(&o, ^{
         c = @[
+            @[@"لوس أنجلوس", @34.0522, @-118.2437],
+            @[@"سان فرانسيسكو", @37.7749, @-122.4194],
+            @[@"سان دييغو", @32.7157, @-117.1611],
+            @[@"سكرامنتو", @38.5816, @-121.4944],
             @[@"الكويت", @29.3759, @47.9774],
             @[@"الرياض", @24.7136, @46.6753],
             @[@"مكة", @21.3891, @39.8579],
